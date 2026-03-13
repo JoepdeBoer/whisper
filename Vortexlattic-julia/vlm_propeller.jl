@@ -5,15 +5,16 @@ using VortexLattice
 using OpenMDAOCore
 using ForwardDiff
 
+
 # ──────────────────────────────────────────────────────────────
 # Helper: build the propeller VLM system from design variables
 # ──────────────────────────────────────────────────────────────
 function run_vlm(chord_root, chord_tip, twist_root, twist_tip, n_blades)
 
     # Fixed parameters
-    RPM      = 2000.0
+    RPM      = 5000.0
     R        = 0.508 / 2        # 20 inches diameter
-    n_blades = 3
+    n_blades = 2
     rho      = 1.225
 
     ns = 12
@@ -26,7 +27,7 @@ function run_vlm(chord_root, chord_tip, twist_root, twist_tip, n_blades)
     # Use a type-consistent reference velocity
     # eltype() ensures Vinf_eff is Dual when inputs are Dual
     TF       = eltype(promote(chord_root, chord_tip, twist_root, twist_tip))
-    Vinf_eff = TF(0.05 * Vtip)   # 5% of tip speed — small but well away from zero
+#     Vinf_eff = TF(0.05 * Vtip)   # 5% of tip speed — small but well away from zero
 
     xle   = [TF(0.0),   TF(0.0)]
     yle   = [TF(r_hub), TF(R)  ]
@@ -40,13 +41,13 @@ function run_vlm(chord_root, chord_tip, twist_root, twist_tip, n_blades)
     cref = (chord_root + chord_tip) / 2
     bref = TF(R - r_hub)
     rref = [TF(0.0), TF(0.0), TF(0.0)]
-    ref  = Reference(Sref, cref, bref, rref, Vinf_eff)
+    ref  = Reference(Sref, cref, bref, rref, 1)
 
     # Freestream must also be typed with TF
     alpha = TF(0.0)
     beta  = TF(0.0)
     Omega = [TF(omega), TF(0.0), TF(0.0)]
-    fs    = Freestream(Vinf_eff, alpha, beta, Omega)
+    fs    = Freestream(0, alpha, beta, Omega)
 
     grid, surface = wing_to_surface_panels(xle, yle, zle, chord, theta, phi, ns, nc;
                         fc=fc,
@@ -58,9 +59,9 @@ function run_vlm(chord_root, chord_tip, twist_root, twist_tip, n_blades)
 
     CF, CM = body_forces(system; frame=Wind())
 
-    q = TF(0.5 * rho) * Vtip^2
-    T = CF[3] * q * Sref * n_blades
-    Q = CM[1] * q * Sref * R * n_blades
+    q = TF(0.5 * rho) * 1 # ref velocity of 1
+    T = CF[3] * q * Sref
+    Q = CM[1] * q * Sref * cref
 
     return T, Q
 end

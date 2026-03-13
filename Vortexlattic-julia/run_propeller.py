@@ -1,5 +1,7 @@
+import math
 import openmdao.api as om
 import juliacall
+
 jl = juliacall.newmodule("PropellerVLM")
 
 jl.include("vlm_propeller.jl")
@@ -31,10 +33,10 @@ prob.driver.options["tol"] = 1e-6
 prob.setup()
 
 # Initial values
-prob.set_val("vlm.chord_root", 0.10)
-prob.set_val("vlm.chord_tip",  0.07)
-prob.set_val("vlm.twist_root", 0.1)
-prob.set_val("vlm.twist_tip",  0.05)
+prob.set_val("vlm.chord_root", 0.15)
+prob.set_val("vlm.chord_tip",  0.08)
+prob.set_val("vlm.twist_root", 0.4)
+prob.set_val("vlm.twist_tip",  0.1)
 
 # Step 1: forward solve
 prob.run_model()
@@ -49,11 +51,24 @@ data = prob.check_totals(
 )
 
 # Step 3: optimise
-# prob.run_driver()
-print(f"\nOptimised thrust: {prob.get_val('vlm.thrust')[0]:.2f} N")
-print(f"Optimised torque: {prob.get_val('vlm.torque')[0]:.2f} Nm")
-print(f"chord_root = {prob.get_val('vlm.chord_root')[0]:.4f} m")
-print(f"chord_tip  = {prob.get_val('vlm.chord_tip')[0]:.4f} m")
-print(f"twist_root = {prob.get_val('vlm.twist_root')[0]:.4f} rad")
-print(f"twist_tip  = {prob.get_val('vlm.twist_tip')[0]:.4f} rad")
-print(f"\nFigure of Merit proxy — T/Q = {50.0 / abs(prob.get_val('vlm.torque')[0]):.3f} N/Nm")
+prob.run_driver()
+
+# Extract values
+T     = prob.get_val('vlm.thrust')[0]
+Q     = abs(prob.get_val('vlm.torque')[0])
+RPM   = 5000.0
+R     = 0.508/2
+rho   = 1.225
+
+omega = 2 * math.pi * RPM / 60.0
+A     = math.pi * R**2      # rotor disk area
+P_actual = Q * omega                          # actual power [W]
+P_ideal  = abs(T)**1.5 / math.sqrt(2 * rho * A)   # ideal (actuator disk) power [W]
+FOM = P_ideal / P_actual
+
+print(f"\n--- Hover Performance ---")
+print(f"Thrust:        {T:.2f} N")
+print(f"Torque:        {Q:.2f} Nm")
+print(f"Power actual:  {P_actual:.2f} W")
+print(f"Power ideal:   {P_ideal:.2f} W")
+print(f"Figure of Merit: {FOM:.4f}")
