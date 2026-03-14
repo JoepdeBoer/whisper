@@ -34,6 +34,7 @@ THIN_GEOM_SET  =  2   # prop-only thin set as configured in GUI # shown, not sho
 ANALYSIS_MODE  = VSPAERO_PROP_UNSTEADY
 # ANALYSIS_MODE  = vsp.VSPAERO_PROP_PSEUDO_STEADY #TODO debug seems that this does not effect choice steady/pseudo only from gui
 ANALYSIS_BASE_NAME = "Hover_analysis"
+AVG_LAST_N         = 20     # timesteps to average for unsteady; None or 1 for pseudo-steady (last value only)
 
 # Reference values (derived)
 OMEGA          = RPM * 2.0 * pi / 60.0

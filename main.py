@@ -91,7 +91,7 @@ def main():
         )
 
         # parse from output files (more reliable than GetDoubleResults)
-        res = parse_results(case_dir, label)
+        res = parse_results(case_dir, label, avg_last_n=AVG_LAST_N)
         for k in ("CT", "CQ", "Thrust_N", "Torque_Nm", "FOM"):
             row[k] = res[k]
 
