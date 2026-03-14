@@ -3,7 +3,7 @@ import io
 import pandas as pd
 
 
-_COLS = ["CT", "CQ", "FOM", "Thrust", "Moment"]
+_ROTOR_COLS = ["CT", "CQ", "FOM", "Thrust", "Moment"]
 
 
 def _read_rotor_sections(rotor_file):
@@ -17,6 +17,7 @@ def _read_rotor_sections(rotor_file):
         raw = f.read()
 
     # Everything before "Time averaged results" is the timestep section
+    # (pseudo-steady files don't have this section, so `before` == full text)
     before, _, _ = raw.partition("Time averaged results")
     lines = [l for l in before.splitlines() if l.strip()]
 
@@ -27,18 +28,15 @@ def _read_rotor_sections(rotor_file):
 
 
 def parse_rotor(rotor_file, avg_last_n=None):
-    """Parse a VSPAERO .rotor file.
+    """Parse a VSPAERO .rotor file for global CT, CQ, FOM, etc.
 
     Parameters
     ----------
-    rotor_file : str
-        Path to the .rotor.N file.
     avg_last_n : int or None
-        - None or 1 : return the last timestep (use for pseudo-steady).
-        - > 1       : return the mean of the last *n* timesteps
-                       (use for unsteady, e.g. one full revolution).
+        - None or 1 : return the last timestep (pseudo-steady).
+        - > 1       : mean of the last *n* timesteps (unsteady).
     """
-    result = dict(r_norm=[], r_m=[], dCT_dR=[])
+    result = {}
     if not os.path.isfile(rotor_file):
         return result
 
@@ -49,8 +47,7 @@ def parse_rotor(rotor_file, avg_last_n=None):
         df.columns = df.columns.str.strip()
 
         if avg_last_n is not None and avg_last_n > 1:
-            tail = df.tail(avg_last_n)
-            row = tail[_COLS].mean()
+            row = df.tail(avg_last_n)[_ROTOR_COLS].mean()
         else:
             row = df.iloc[-1]
 
@@ -64,7 +61,111 @@ def parse_rotor(rotor_file, avg_last_n=None):
     return result
 
 
+def _read_lod_dataframe(lod_file):
+    """Read a .lod file into a DataFrame, skipping the reference-value header.
+
+    Handles both unsteady (first column ``Time``) and pseudo-steady
+    (first column ``Iter``) formats.  A unified ``_step`` column is added
+    so downstream code can group by timestep/iteration uniformly.
+    """
+    with open(lod_file) as f:
+        raw = f.read()
+
+    lines = raw.splitlines()
+    # Find the column header: starts with "Time" or "Iter", contains "VortexSheet"
+    header_idx = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if ("VortexSheet" in stripped
+                and (stripped.startswith("Time") or stripped.startswith("Iter"))):
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError(f"Could not find data header in {lod_file}")
+
+    data_lines = [lines[header_idx]]
+    for line in lines[header_idx + 1:]:
+        if line.strip():
+            data_lines.append(line)
+
+    df = pd.read_csv(io.StringIO("\n".join(data_lines)), sep=r"\s+", engine="python")
+    df.columns = df.columns.str.strip()
+
+    # Unify the step column: unsteady uses "Time", pseudo-steady uses "Iter"
+    if "Time" in df.columns:
+        step_col = "Time"
+    elif "Iter" in df.columns:
+        step_col = "Iter"
+    else:
+        raise ValueError(f"Neither 'Time' nor 'Iter' column found in {lod_file}")
+
+    df["_step"] = pd.to_numeric(df[step_col], errors="coerce")
+
+    for col in ("roverR", "CT", "CQ", "dSpan", "Diameter", "VortexSheet"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+def parse_lod(lod_file, avg_last_n=None):
+    """Parse radial distributions (dCT/dR, dCQ/dR) from a VSPAERO .lod file.
+
+    Works for both unsteady (``Time`` column) and pseudo-steady (``Iter``
+    column) output.
+
+    Parameters
+    ----------
+    avg_last_n : int or None
+        - None or 1 : use the last timestep/iteration only (pseudo-steady).
+        - > 1       : average over the last *n* timesteps (unsteady).
+
+    Returns
+    -------
+    dict with keys: r_norm, dCT_dR, dCQ_dR  (lists, one entry per radial
+    station, summed across all blades).
+    """
+    result = dict(r_norm=[], dCT_dR=[], dCQ_dR=[])
+    if not os.path.isfile(lod_file):
+        return result
+
+    try:
+        df = _read_lod_dataframe(lod_file)
+
+        # Select timesteps / iterations to average over
+        steps = df["_step"].unique()
+        if avg_last_n is not None and avg_last_n > 1:
+            last_steps = steps[-avg_last_n:]
+        else:
+            last_steps = steps[-1:]
+        subset = df[df["_step"].isin(last_steps)]
+
+        # For each radial station: sum across blades within each step,
+        # then average across steps.
+        per_step = (subset.groupby(["_step", "roverR"])[["CT", "CQ", "dSpan"]]
+                    .sum()
+                    .reset_index())
+        avg = per_step.groupby("roverR")[["CT", "CQ", "dSpan"]].mean()
+
+        # dCT/d(r/R) = CT_section / (dSpan / R)
+        diameter = float(subset["Diameter"].iloc[0])
+        radius = diameter / 2.0
+
+        result["r_norm"]  = avg.index.tolist()
+        result["dCT_dR"]  = (avg["CT"] / (avg["dSpan"] / radius)).tolist()
+        result["dCQ_dR"]  = (avg["CQ"] / (avg["dSpan"] / radius)).tolist()
+    except Exception as e:
+        print(f"    WARNING: could not parse lod file: {e}")
+    return result
+
+
 def parse_results(case_dir, case_name, avg_last_n=None):
-    """Parse output files from a completed VSPAERO case."""
+    """Parse output files from a completed VSPAERO case.
+
+    Returns a dict with global coefficients (from .rotor) and radial
+    distributions (from .lod).
+    """
     rotor_file = os.path.join(case_dir, f"{case_name}.rotor.1")
-    return parse_rotor(rotor_file, avg_last_n=avg_last_n)
+    lod_file   = os.path.join(case_dir, f"{case_name}.lod")
+
+    result = parse_rotor(rotor_file, avg_last_n=avg_last_n)
+    result.update(parse_lod(lod_file, avg_last_n=avg_last_n))
+    return result

@@ -35,28 +35,35 @@ def plot_sweep_summary(df, output_dir, diameter, rpm, vinf):
     print(f"Plot \u2192 {p}")
 
 
-def plot_radial_thrust(df, output_dir, amplitude_frac):
-    """Radial thrust distribution for each valid amplitude."""
+def _radial_csv_path(output_dir, row):
+    """Build the path to a case's radial_distribution.csv."""
+    return os.path.join(
+        output_dir,
+        f"A{int(row['step']):02d}_amp{row['amplitude_m']*1000:.1f}mm",
+        "radial_distribution.csv")
+
+
+def plot_radial_distribution(df, output_dir, amplitude_frac, col, ylabel,
+                             title, filename):
+    """Generic radial distribution plot (dCT/dR or dCQ/dR)."""
     valid = df["CT"].notna()
 
     fig, ax = plt.subplots(figsize=(9, 5))
     cmap = plt.cm.viridis
     for _, row in df[valid].iterrows():
-        f = os.path.join(output_dir,
-                f"A{int(row['step']):02d}_amp{row['amplitude_m']*1000:.1f}mm",
-                "thrust_distribution.csv")
+        f = _radial_csv_path(output_dir, row)
         if os.path.exists(f):
             d = pd.read_csv(f)
             c = cmap(row["amplitude_frac_R"] / (amplitude_frac + 1e-9))
-            ax.plot(d["r_norm"], d["dCT_dR"], color=c,
+            ax.plot(d["r_norm"], d[col], color=c,
                     label=f"A/R={row['amplitude_frac_R']:.2f}")
     ax.set_xlabel("r / R")
-    ax.set_ylabel("dCT / dR")
-    ax.set_title("Radial Thrust Distribution \u2014 tangential amplitude sweep")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
     ax.legend(fontsize=8, ncol=2)
     ax.grid(True, ls="--", alpha=0.5)
     plt.tight_layout()
-    p = os.path.join(output_dir, "thrust_distribution_sweep.png")
+    p = os.path.join(output_dir, filename)
     plt.savefig(p, dpi=150); plt.close()
     print(f"Plot \u2192 {p}")
 
@@ -87,8 +94,17 @@ def plot_tangential_shapes(amplitudes, output_dir, r_root_frac, r_tip_frac,
 
 def make_plots(df, amplitudes, *, output_dir, diameter, rpm, vinf,
                amplitude_frac, r_root_frac, r_tip_frac, n_steps, radius):
-    """Run all three plot routines."""
+    """Run all plot routines."""
     plot_sweep_summary(df, output_dir, diameter, rpm, vinf)
-    plot_radial_thrust(df, output_dir, amplitude_frac)
+    plot_radial_distribution(
+        df, output_dir, amplitude_frac,
+        col="dCT_dR", ylabel="dCT / d(r/R)",
+        title="Radial Thrust Distribution \u2014 tangential amplitude sweep",
+        filename="thrust_distribution_sweep.png")
+    plot_radial_distribution(
+        df, output_dir, amplitude_frac,
+        col="dCQ_dR", ylabel="dCQ / d(r/R)",
+        title="Radial Torque Distribution \u2014 tangential amplitude sweep",
+        filename="torque_distribution_sweep.png")
     plot_tangential_shapes(amplitudes, output_dir, r_root_frac, r_tip_frac,
                            n_steps, radius)

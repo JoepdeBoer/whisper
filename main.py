@@ -107,9 +107,9 @@ def main():
         if res.get("r_norm"):
             pd.DataFrame({
                 "r_norm": res["r_norm"],
-                "r_m"   : res["r_m"],
                 "dCT_dR": res["dCT_dR"],
-            }).to_csv(os.path.join(case_dir, "thrust_distribution.csv"),
+                "dCQ_dR": res["dCQ_dR"],
+            }).to_csv(os.path.join(case_dir, "radial_distribution.csv"),
                       index=False)
 
         summary.append(row)
