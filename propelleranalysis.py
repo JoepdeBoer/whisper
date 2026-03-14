@@ -56,6 +56,7 @@ NUM_REVS       = 3       # revolutions for auto timestep
 AUTO_TIMESTEP  = True
 THIN_GEOM_SET  =  2   # prop-only thin set as configured in GUI # shown, not shown set0
 ANALYSIS_MODE  = vsp.VSPAERO_PROP_UNSTEADY # 0=steady, 1=unsteady, 2=pseudo-steady
+# ANALYSIS_MODE  = vsp.VSPAERO_PROP_PSEUDO_STEADY #TODO debug seems that this does not effect choice steady/pseudo only from gui
 ANALYSIS_BASE_NAME = "Hover_analysis"
 
 # Reference values (derived)
@@ -120,11 +121,18 @@ def set_rpm(rpm):
 def run_vspaero():
     """Run VSPAERO unsteady VLM. Returns results_id or None."""
 
-    # # DegenGeom required first
-    # vsp.SetAnalysisInputDefaults("DegenGeom")
-    # vsp.ExecAnalysis("DegenGeom")
+    # BUG UnsteadyType does not change analysis mode correctly:
+    def set_prop_blades_mode(mode):
+        cid = vsp.FindContainer("VSPAEROSettings", 0)
+        pid = vsp.FindParm(cid, "m_PropBladesMode", "VSPAERO")
+        if pid:
+            vsp.SetParmVal(pid, float(mode))
+            vsp.Update()
+            print(f"  Set m_PropBladesMode={mode}")
+        else:
+            print("  WARNING: m_PropBladesMode not found")
+    set_prop_blades_mode(ANALYSIS_MODE)
 
-    # Compute geometry I think this is not required
     cg = "VSPAEROComputeGeometry"
     vsp.SetAnalysisInputDefaults(cg)
     vsp.SetIntAnalysisInput(cg, "GeomSet", [vsp.SET_NONE]) #TODO test
@@ -135,15 +143,9 @@ def run_vspaero():
 
     sw = "VSPAEROSweep"
     vsp.SetAnalysisInputDefaults(sw)
-    solver_path = vsp.GetVSPAEROPath()
-    print(f"  VSPAERO solver path: {solver_path}")
-    print(f"  Solver exists: {os.path.isfile(solver_path)}")
-
 
     mach =  OMEGA * R * 0.7 / 340 #TODO is this right
 
-    # Method + type
-    # vsp.SetIntAnalysisInput   (sw, "AnalysisMethod",    [vsp.VSPAERO_ANALYSIS_METHOD.VORTEX_LATTICE])             # VLM
     vsp.SetIntAnalysisInput   (sw, "UnsteadyType",      [ANALYSIS_MODE])
     vsp.SetIntAnalysisInput   (sw, "GeomSet",           [vsp.SET_NONE])
     vsp.SetIntAnalysisInput   (sw, "ThinGeomSet",       [vsp.SET_ALL])
@@ -160,7 +162,7 @@ def run_vspaero():
     vsp.SetDoubleAnalysisInput(sw, "ReCref",            [RE_CREF])
 
     # Reference values
-    vsp.SetIntAnalysisInput   (sw, "ManualVrefFlag",    [1])
+    vsp.SetIntAnalysisInput   (sw, "ManualVrefFlag",    [True])
     vsp.SetDoubleAnalysisInput(sw, "Vref",              [VREF])
     vsp.SetDoubleAnalysisInput(sw, "Machref",           [MREF])
     vsp.SetDoubleAnalysisInput(sw, "Sref",              [SREF])
@@ -169,8 +171,8 @@ def run_vspaero():
 
     # Wake
     vsp.SetIntAnalysisInput   (sw, "NumWakeNodes",      [NUM_WAKE_NODES])
-    vsp.SetIntAnalysisInput   (sw, "WakeNumIter",       [WAKE_NUM_ITER])
-    # vsp.SetIntAnalysisInput   (sw, "FixedWakeFlag",     [0])     # free wake default false
+    vsp.SetIntAnalysisInput   (sw, "WakeNumIter",       [WAKE_NUM_ITER]) # only used in pseudo steady
+    vsp.SetIntAnalysisInput   (sw, "FixedWakeFlag",     [False]) # TODO checkl if bool instead of int is okay
 
     # Time stepping
     vsp.SetIntAnalysisInput   (sw, "AutoTimeStepFlag",  [int(AUTO_TIMESTEP)])
@@ -180,8 +182,8 @@ def run_vspaero():
     vsp.SetIntAnalysisInput   (sw, "NCPU",              [NCPU])
 
     vsp.Update()
-
     rid = vsp.ExecAnalysis(sw)
+
     if not rid:
         print("    ERROR: VSPAEROSweep failed")
     return rid
@@ -198,8 +200,6 @@ def parse_rotor(rotor_file):
         result["CT"]       = float(row["CT"])
         result["CQ"]       = float(row["CQ"])
         result["FOM"]      = float(row["FOM"])
-        n_rps = RPM / 60.0
-        D = DIAMETER
         result["Thrust_N"]  = float(row["Thrust"])
         result["Torque_Nm"] = float(row["Moment"])
     except Exception as e:
@@ -209,7 +209,6 @@ def parse_rotor(rotor_file):
 
 def parse_results(case_dir, case_name):
     """Parse output files from a completed VSPAERO case."""
-    polar_file = os.path.join(case_dir, f"{case_name}.polar")
     rotor_file = os.path.join(case_dir, f"{case_name}.rotor.1")
     rot = parse_rotor(rotor_file)
     return rot
@@ -275,7 +274,6 @@ def main():
         print(f"    Geometry saved → {case_vsp}")
 
         # 5. run VSPAERO — set filename so output files go to case_dir
-
         rid = run_vspaero()
         row = dict(
             step            = idx,
@@ -292,9 +290,8 @@ def main():
         if not rid:
             print("    WARNING: ExecAnalysis returned no rid")
 
-
         def fmt(v, spec): return format(v, spec) if v is not None else "N/A"
-        print(f"    CT={fmt(res['CT'],'.5f')}  "
+        print(f"CT={fmt(res['CT'],'.5f')}  "
               f"CQ={fmt(res['CQ'],'.5f')}  "
               f"T={fmt(res['Thrust_N'],'.3f')} N  "
               f"FOM={fmt(res['FOM'],'.4f')}")
