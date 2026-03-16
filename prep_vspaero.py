@@ -39,7 +39,6 @@ def prep_sweep_analysis(omega: float,
                         time_step: int | None = None,
                         ) -> None:
     """Applies the given settings to a sweep analysis and updates analysis manager."""
-    set_prop_blades_mode(mode)
 
     sw = _SWEEP
     vsp.SetAnalysisInputDefaults(sw)

@@ -49,11 +49,14 @@ CONV_TOL = 0.01     # 1 % relative convergence criterion
 # ── parameter ranges ──────────────────────────────────────────────────────────
 # Tessellation: (Tess_U, Tess_W) pairs – both odd, increasing linearly
 TESS_PAIRS = [
-    (5,  3),
-    (10,  6),
+
+    (11, 9),
     (19,  9),
-    (27, 17),
-    (38, 25),
+    (45, 17),
+    (61, 25),
+    (95, 33),
+    (101, 57),
+
 ]
 
 WAKE_ITER_VALUES  = [2, 3, 5, 8, 12, 18, 27, 41]
@@ -313,9 +316,9 @@ def main():
     print(f"  Output dir  : {OUTPUT_DIR}")
 
     df_tess       = study_tessellation()
-    df_wake_iter  = study_wake_iterations()
-    df_wake_nodes = study_wake_nodes()
-    plot_summary(df_tess, df_wake_iter, df_wake_nodes)
+    # df_wake_iter  = study_wake_iterations()
+    # df_wake_nodes = study_wake_nodes()
+    # plot_summary(df_tess, df_wake_iter, df_wake_nodes)
 
     print("\nAll done.")
 

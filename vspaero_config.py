@@ -31,8 +31,8 @@ NCPU           = 8
 NUM_REVS       = 3       # revolutions for auto timestep
 AUTO_TIMESTEP  = True
 THIN_GEOM_SET  =  2   # prop-only thin set as configured in GUI # shown, not shown set0
-ANALYSIS_MODE  = VSPAERO_PROP_UNSTEADY
-# ANALYSIS_MODE  = vsp.VSPAERO_PROP_PSEUDO_STEADY #TODO debug seems that this does not effect choice steady/pseudo only from gui
+#ANALYSIS_MODE  = VSPAERO_PROP_UNSTEADY
+ANALYSIS_MODE  = VSPAERO_PROP_PSEUDO_STEADY #TODO debug seems that this does not effect choice steady/pseudo only from gui
 ANALYSIS_BASE_NAME = "Hover_analysis"
 AVG_LAST_N         = 20     # timesteps to average for unsteady; None or 1 for pseudo-steady (last value only)
 
