@@ -3,7 +3,7 @@ import io
 import pandas as pd
 
 
-_ROTOR_COLS = ["CT", "CQ", "FOM", "Thrust", "Moment"]
+_ROTOR_COLS = ["CT_H", "CQ_H", "FOM", "Thrust", "Moment"]
 
 
 def _read_rotor_sections(rotor_file):
@@ -140,18 +140,19 @@ def parse_lod(lod_file, avg_last_n=None):
 
         # For each radial station: sum across blades within each step,
         # then average across steps.
-        per_step = (subset.groupby(["_step", "roverR"])[["CT", "CQ", "dSpan"]]
+        per_step = (subset.groupby(["_step", "roverR"])[["Cx", "Cz", "CT_h", "CQ_h", "dSpan"]]
                     .sum()
                     .reset_index())
-        avg = per_step.groupby("roverR")[["CT", "CQ", "dSpan"]].mean()
+        avg = per_step.groupby("roverR")[["Cx", "Cz","CT_h", "CQ_h", "dSpan"]].mean()
 
         # dCT/d(r/R) = CT_section / (dSpan / R)
         diameter = float(subset["Diameter"].iloc[0])
         radius = diameter / 2.0
 
-        result["r_norm"]  = avg.index.tolist()
-        result["dCT_dR"]  = (avg["CT"] / (avg["dSpan"] / radius)).tolist()
-        result["dCQ_dR"]  = (avg["CQ"] / (avg["dSpan"] / radius)).tolist()
+        result["r_norm"]  = (avg.index  + 0.2).tolist() # TODO remove hardcoded hub fraction
+        result["dCT_dR"]  = (avg["CT_h"] / (avg["dSpan"] / radius)).tolist()
+        result["dCQ_dR"]  = (avg["CQ_h"] / (avg["dSpan"] / radius)).tolist()
+
     except Exception as e:
         print(f"    WARNING: could not parse lod file: {e}")
     return result
@@ -169,3 +170,7 @@ def parse_results(case_dir, case_name, avg_last_n=None):
     result = parse_rotor(rotor_file, avg_last_n=avg_last_n)
     result.update(parse_lod(lod_file, avg_last_n=avg_last_n))
     return result
+
+
+if __name__ == "__main__":
+    parse_lod("tangential_sweep_results/A02_amp51mm/A02_amp51mm.lod", avg_last_n=1)

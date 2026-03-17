@@ -46,7 +46,7 @@ def _radial_csv_path(output_dir, row):
 def plot_radial_distribution(df, output_dir, amplitude_frac, col, ylabel,
                              title, filename):
     """Generic radial distribution plot (dCT/dR or dCQ/dR)."""
-    valid = df["CT"].notna()
+    valid = df["CT_h"].notna()
 
     fig, ax = plt.subplots(figsize=(9, 5))
     cmap = plt.cm.viridis
