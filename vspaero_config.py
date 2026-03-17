@@ -7,8 +7,8 @@ VSP_FILE       = "nacapropeller-mod.vsp3"
 OUTPUT_DIR     = "tangential_sweep_results"
 
 # Sweep
-N_STEPS        = 2          # number of amplitude steps (includes A=0)
-AMPLITUDE_FRAC = 0.6       # max amplitude = AMPLITUDE_FRAC * R  (= R/4)
+N_STEPS        = 6          # number of amplitude steps (includes A=0)
+AMPLITUDE_FRAC = 0.5       # max amplitude = AMPLITUDE_FRAC * R  (= R/4)
 N_CURVE_PTS    = 11         # control points for the half-sine PCurve
 
 # Propeller geometry
