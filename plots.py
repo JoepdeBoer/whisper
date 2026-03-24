@@ -73,13 +73,14 @@ def plot_radial_distribution(df: pd.DataFrame, output_dir:str) ->None:
 
         for i, row in df.iterrows():
             label = f"A/R = {row['amplitude_frac_R']:+.1f}"
-            data = pd.read_csv(StringIO(row["CT_h"]), skipfooter=1, sep='\s+', skiprows=1, header=None)
+            data = pd.read_csv(StringIO(row["CT_h"]), skipfooter=1, sep=r'\s+', skiprows=1, header=None, engine='python')
             r = data[0]
+            r_norm  = r + (1-r[r.keys().stop-1]) # TODO fix sweepsummary to prevent this
             ct = data[1]
-            ax_ct.plot(r, ct, color=colours[i], linewidth=1.8, label=label)
+            ax_ct.plot(r_norm, ct, color=colours[i], linewidth=1.8, label=label)
 
         ax_ct.set_xlabel("r / R  (–)", fontsize=13)
-        ax_ct.set_ylabel(r"$c_{T}$  (–)", fontsize=13)
+        ax_ct.set_ylabel(r"$c_{T_h}$  (–)", fontsize=13)
         ax_ct.set_title("Thrust Coefficient Distribution over Blade Span", fontsize=14)
         ax_ct.legend(title="Amplitude", fontsize=9, title_fontsize=10,
                      loc="upper left", framealpha=0.85)
@@ -96,13 +97,14 @@ def plot_radial_distribution(df: pd.DataFrame, output_dir:str) ->None:
 
         for i, row in df.iterrows():
             label = f"A/R = {row['amplitude_frac_R']:+.1f}"
-            data = pd.read_csv(StringIO(row["CQ_h"]), skipfooter=1, sep='\s+', skiprows=1, header=None)
+            data = pd.read_csv(StringIO(row["CQ_h"]), skipfooter=1, sep=r'\s+', skiprows=1, header=None, engine='python')
             r = data[0]
+            r_norm  = r + (1-r[r.keys().stop-1]) # TODO fix sweepsummary to prevent this
             cq = data[1]
-            ax_cq.plot(r, cq, color=colours[i], linewidth=1.8, label=label)
+            ax_cq.plot(r_norm, cq, color=colours[i], linewidth=1.8, label=label)
 
         ax_cq.set_xlabel("r / R  (–)", fontsize=13)
-        ax_cq.set_ylabel(r"$c_{Q}$  (–)", fontsize=13)
+        ax_cq.set_ylabel(r"$c_{Q_h}$  (–)", fontsize=13)
         ax_cq.set_title("Torque Coefficient Distribution over Blade Span", fontsize=14)
         ax_cq.legend(title="Amplitude", fontsize=9, title_fontsize=10,
                      loc="upper left", framealpha=0.85)

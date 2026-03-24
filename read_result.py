@@ -146,7 +146,7 @@ def parse_lod(lod_file, avg_last_n=None):
                     .reset_index())
         avg = per_step.groupby("roverR")[["CT_h", "CQ_h", "Thrust", "Moment", "FOM"]].mean()
 
-        result["r_norm"]  = (avg.index  + 0.2).tolist() # TODO remove hardcoded hub fraction/ sometimes exceeding 1.0 bug?
+        result["r_norm"]  = (avg.index  + (1-avg.index[-1])).tolist() # TODO remove hardcoded hub fraction/ sometimes exceeding 1.0 bug?
         result["CT_h"] = avg["CT_h"]
         result["CQ_h"] = avg["CQ_h"]
         result["Thrust"] = avg["Thrust"]
