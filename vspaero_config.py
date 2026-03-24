@@ -25,8 +25,8 @@ VINF           = 0.0    # m/s
 RHO            = 1.225      # kg/m³
 MU             = 1.4146e-5  # m^2/s
 
-NUM_WAKE_NODES = 24
-WAKE_NUM_ITER  = 10      # Only settable for pseudo-steady
+NUM_WAKE_NODES = 60
+WAKE_NUM_ITER  = 22      # Only settable for pseudo-steady
 NCPU           = 8
 NUM_REVS       = 3       # revolutions for auto timestep
 AUTO_TIMESTEP  = True
@@ -34,7 +34,7 @@ THIN_GEOM_SET  =  2   # prop-only thin set as configured in GUI # shown, not sho
 #ANALYSIS_MODE  = VSPAERO_PROP_UNSTEADY
 ANALYSIS_MODE  = VSPAERO_PROP_PSEUDO_STEADY #TODO debug seems that this does not effect choice steady/pseudo only from gui
 ANALYSIS_BASE_NAME = "Hover_analysis"
-AVG_LAST_N         = 20     # timesteps to average for unsteady; None or 1 for pseudo-steady (last value only)
+AVG_LAST_N         = 1     # timesteps to average for unsteady; None or 1 for pseudo-steady (last value only)
 
 # Reference values (derived)
 OMEGA          = RPM * 2.0 * pi / 60.0

@@ -5,8 +5,8 @@ Post-processing script: loads VSPAERO aerodynamic results produced by main.py
 and computes propeller noise using the rotating-dipole model in noise/.
 
 For each sweep case found in OUTPUT_DIR (tangential_sweep_results/):
-  1. Load radial force distribution from radial_distribution.csv
-  2. Convert dCT/dR, dCQ/dR → dimensional forces FtR, FdR [N/station] per blade
+  1. Load radial force distribution from .lod files
+  2. Convert Moment → Ftan [N/station] per blade
   3. Run compute_noise_from_distributed_dipole_sources() for each blade
   4. Compute SPL, SPLA spectra; OSWL, OSWLA overall sound-power levels
   5. Save polar-directivity, spectrum, and radial-OSPL plots per case
@@ -14,10 +14,7 @@ For each sweep case found in OUTPUT_DIR (tangential_sweep_results/):
 
 Force conversion
 ----------------
-dCT_dR in radial_distribution.csv is summed over all blades.
-Per-blade: FtR[i] = dCT_dR[i] * dr[i] * rho * A * (Omega*R)^2 / N_BLADES
-           FdR[i] = dCQ_dR[i] * dr[i] * rho * A * (Omega*R)^2 / (rR[i] * N_BLADES)
-  (drag force = dQ/dr  / r,  where CQ = Q / (rho A (Omega R)^2 R))
+Per-blade: Ftan[i] = Moment/(roverR * R)
 
 Sweep-angle reconstruction
 --------------------------
@@ -28,6 +25,7 @@ Matches set_tangential_curve() in geom_utils.py:
 
 import os
 import numpy as np
+import numpy.typing as npt
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -68,25 +66,6 @@ def _sweep_angle_deg(rR, amplitude_m):
     r_phys = np.where(rR < 1e-9, 1e-9, rR) * R
     return np.degrees(np.arctan2(tan_offset, r_phys))
 
-
-def _forces_per_blade(rR, dCT_dR, dCQ_dR):
-    """Convert dimensionless radial distributions to per-blade forces [N/station].
-
-    Returns
-    -------
-    FtR : steady thrust force  at each radial station [N]
-    FdR : steady drag  force   at each radial station [N]
-    """
-    dr    = np.gradient(rR)                            # non-uniform spacing ok
-    q_ref = RHO * np.pi * R**2 * (OMEGA * R)**2       # rho * A * (Omega R)^2
-
-    FtR = dCT_dR * dr * q_ref / N_BLADES
-    # Q_section = dCQ * dr * q_ref * R  →  F_drag = Q_section / (rR * R)
-    safe_rR = np.where(rR < 1e-9, 1e-9, rR)
-    FdR = dCQ_dR * dr * q_ref / (safe_rR * N_BLADES)
-    return FtR, FdR
-
-
 def _nan_zeros(arr):
     out = arr.copy()
     out[np.abs(out) <= 0] = np.nan
@@ -124,19 +103,17 @@ def _radial_ospl(PR):
 
 # ── core noise routine ────────────────────────────────────────────────────────
 
-def run_noise_for_case(rR, dCT_dR, dCQ_dR, amplitude_m, label, out_dir):
+def run_noise_for_case(rR: npt.NDArray, thrust: npt.NDArray, moment: npt.NDArray,
+                       amplitude_m: float, label:str, out_dir: str) -> dict:
     """Run full noise analysis for one sweep case and save plots.
 
     Returns a dict of OSWL/OSWLA scalars for summary plotting.
     """
-    rR     = np.asarray(rR,     dtype=float)
-    dCT_dR = np.asarray(dCT_dR, dtype=float)
-    dCQ_dR = np.asarray(dCQ_dR, dtype=float)
     nR     = len(rR)
 
-    phi0_base        = _sweep_angle_deg(rR, amplitude_m)
-    FtR, FdR         = _forces_per_blade(rR, dCT_dR, dCQ_dR)
-    FtiR, FdiR       = PCT_IMPULSE * FtR, PCT_IMPULSE * FdR
+    phi0_base        = _sweep_angle_deg(rR, amplitude_m) # TODO incorporate cartesian location to allow other sweep distributions
+    Ftan = moment/(rR*R)
+    thrust_i, tangential_i       = PCT_IMPULSE * thrust, PCT_IMPULSE * Ftan
 
     vm       = np.arange(1, NM + 1)
     thetaDeg = np.linspace(0, 360, NTHETA)
@@ -156,12 +133,12 @@ def run_noise_for_case(rR, dCT_dR, dCQ_dR, amplitude_m, label, out_dir):
 
         # Two impulse events per blade (180° apart within one revolution)
         res1 = compute_noise_from_distributed_dipole_sources(
-            R, 1, OMEGA, rR, phi0DegR, FtR, FdR, FtiR, FdiR,
+            R, 1, OMEGA, rR, phi0DegR, thrust, Ftan, thrust_i, tangential_i,
             CO, vm, ZETA_DEG, thetaDeg, phiI1, PMAXINT, RMIC)
         _, _, Ptihat1, Pdihat1, _, _, PtihatR1, PdihatR1 = res1
 
         res2 = compute_noise_from_distributed_dipole_sources(
-            R, 1, OMEGA, rR, phi0DegR, FtR, FdR, FtiR, FdiR,
+            R, 1, OMEGA, rR, phi0DegR, thrust, Ftan, thrust_i, tangential_i,
             CO, vm, ZETA_DEG, thetaDeg, phiI2, PMAXINT, RMIC)
         PtB, PdB, Ptihat2, Pdihat2, PtRB, PdRB, PtihatR2, PdihatR2 = res2
 
@@ -333,22 +310,19 @@ def main():
         if not res["r_norm"]:
             print(f"  WARNING: no radial data in {lod_path}, skipping.")
             continue
-        rR     = np.array(res["r_norm"])
-        dCT_dR = np.array(res["dCT_dR"])
-        dCQ_dR = np.array(res["dCQ_dR"])
-        # Keep only stations within the actual blade span; hub panels below
-        # R_ROOT_FRAC have non-zero VSPAERO loads but no physical blade.
-        mask   = (rR >= R_ROOT_FRAC) & (rR <= R_TIP_FRAC)
+        rR     = np.array(res["r_norm"]) #TODO last node sometimes exceeding 1.0 bug?
+        thrust = np.array(res["Thrust"])
+        moment = np.array(res["Moment"])
+
         row = run_noise_for_case(
-            rR          = rR[mask],
-            dCT_dR      = dCT_dR[mask],
-            dCQ_dR      = dCQ_dR[mask],
+            rR          = rR,
+            thrust      = thrust,
+            moment     = moment,
             amplitude_m = amp_m,
             label       = label,
             out_dir     = NOISE_DIR,
         )
         summary.append(row)
-        print()
 
     # ── Comparison plot (only meaningful for ≥2 cases) ────────────────────
     if len(summary) >= 2:

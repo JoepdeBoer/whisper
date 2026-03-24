@@ -51,11 +51,12 @@ def parse_rotor(rotor_file, avg_last_n=None):
         else:
             row = df.iloc[-1]
 
-        result["CT"]        = float(row["CT"])
-        result["CQ"]        = float(row["CQ"])
-        result["FOM"]       = float(row["FOM"])
-        result["Thrust_N"]  = float(row["Thrust"])
-        result["Torque_Nm"] = float(row["Moment"])
+        result["CT_H"]        = float(row["CT_H"])
+        result["CQ_H"]        = float(row["CQ_H"])
+        result["FOM_total"]       = float(row["FOM"])
+        result["Thrust_total"]  = float(row["Thrust"])
+        result["Moment_total"] = float(row["Moment"])
+
     except Exception as e:
         print(f"    WARNING: could not parse rotor file: {e}")
     return result
@@ -101,13 +102,13 @@ def _read_lod_dataframe(lod_file):
 
     df["_step"] = pd.to_numeric(df[step_col], errors="coerce")
 
-    for col in ("roverR", "CT", "CQ", "dSpan", "Diameter", "VortexSheet"):
+    for col in ("roverR", "CT_h", "CQ_h", "dSpan", "Diameter", "VortexSheet"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
 
 def parse_lod(lod_file, avg_last_n=None):
-    """Parse radial distributions (dCT/dR, dCQ/dR) from a VSPAERO .lod file.
+    """Parse radial distributions from a VSPAERO .lod file.
 
     Works for both unsteady (``Time`` column) and pseudo-steady (``Iter``
     column) output.
@@ -120,7 +121,7 @@ def parse_lod(lod_file, avg_last_n=None):
 
     Returns
     -------
-    dict with keys: r_norm, dCT_dR, dCQ_dR  (lists, one entry per radial
+    dict with keys: r_norm, "CT_h", "CQ_h", "Thrust", "Moment", "FOM"  (lists, one entry per radial
     station, summed across all blades).
     """
     result = dict(r_norm=[], dCT_dR=[], dCQ_dR=[])
@@ -140,18 +141,17 @@ def parse_lod(lod_file, avg_last_n=None):
 
         # For each radial station: sum across blades within each step,
         # then average across steps.
-        per_step = (subset.groupby(["_step", "roverR"])[["Cx", "Cz", "CT_h", "CQ_h", "dSpan"]]
+        per_step = (subset.groupby(["_step", "roverR"])[[ "CT_h", "CQ_h", "Thrust", "Moment", "FOM"]]
                     .sum()
                     .reset_index())
-        avg = per_step.groupby("roverR")[["Cx", "Cz","CT_h", "CQ_h", "dSpan"]].mean()
+        avg = per_step.groupby("roverR")[["CT_h", "CQ_h", "Thrust", "Moment", "FOM"]].mean()
 
-        # dCT/d(r/R) = CT_section / (dSpan / R)
-        diameter = float(subset["Diameter"].iloc[0])
-        radius = diameter / 2.0
-
-        result["r_norm"]  = (avg.index  + 0.2).tolist() # TODO remove hardcoded hub fraction
-        result["dCT_dR"]  = (avg["CT_h"] / (avg["dSpan"] / radius)).tolist()
-        result["dCQ_dR"]  = (avg["CQ_h"] / (avg["dSpan"] / radius)).tolist()
+        result["r_norm"]  = (avg.index  + 0.2).tolist() # TODO remove hardcoded hub fraction/ sometimes exceeding 1.0 bug?
+        result["CT_h"] = avg["CT_h"]
+        result["CQ_h"] = avg["CQ_h"]
+        result["Thrust"] = avg["Thrust"]
+        result["Moment"] = avg["Moment"]
+        result["FOM"] = avg["FOM"]
 
     except Exception as e:
         print(f"    WARNING: could not parse lod file: {e}")

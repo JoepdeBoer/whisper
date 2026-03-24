@@ -30,7 +30,7 @@ def main():
         sys.exit(f"ERROR: '{VSP_FILE}' not found.\n"
                  f"Run from your Design_code folder.")
 
-    amplitudes = np.linspace(0.0, AMPLITUDE_FRAC * R, N_STEPS)
+    amplitudes = np.linspace(-AMPLITUDE_FRAC*R, AMPLITUDE_FRAC * R, N_STEPS)
 
     print("=" * 60)
     print("Propeller Tangential Curve Sweep")
@@ -87,30 +87,32 @@ def main():
             step            = idx,
             amplitude_m     = round(float(A), 6),
             amplitude_frac_R= round(float(A_frac), 6),
-            CT=None, CQ=None, Thrust_N=None, Torque_Nm=None, FOM=None
+            # CT_=None, CQ=None, Thrust_N=None, Torque_Nm=None, FOM=None
         )
 
         # parse from output files (more reliable than GetDoubleResults)
         res = parse_results(case_dir, label, avg_last_n=AVG_LAST_N)
-        for k in ("CT", "CQ", "Thrust_N", "Torque_Nm", "FOM"):
+        for k in ("CT_H", "CQ_H", "Thrust_total", "Moment_total", "FOM_total", "CT_h", "CQ_h", "Thrust", "Moment", "FOM"):
             row[k] = res[k]
 
         if not rid:
             print("    WARNING: ExecAnalysis returned no rid")
 
         def fmt(v, spec): return format(v, spec) if v is not None else "N/A"
-        print(f"CT={fmt(res['CT'],'.5f')}  "
-              f"CQ={fmt(res['CQ'],'.5f')}  "
-              f"T={fmt(res['Thrust_N'],'.3f')} N  "
-              f"FOM={fmt(res['FOM'],'.4f')}")
+        print(f"CT={fmt(res['CT_H'],'.5f')}  "
+              f"CQ={fmt(res['CQ_H'],'.5f')}  "
+              f"T={fmt(res['Thrust_total'],'.3f')} N  "
+              f"FOM={fmt(res['FOM_total'],'.4f')}")
 
-        if res.get("r_norm"):
-            pd.DataFrame({
-                "r_norm": res["r_norm"],
-                "dCT_dR": res["dCT_dR"],
-                "dCQ_dR": res["dCQ_dR"],
-            }).to_csv(os.path.join(case_dir, "radial_distribution.csv"),
-                      index=False)
+        # if res.get("r_norm"):
+        #     pd.DataFrame({
+        #         "r_norm": res["r_norm"],
+        #         "CT_h": res["CT_h"],
+        #         "CQ_h": res["CQ_h"],
+        #         "Thrust" : res["Thrust"],
+        #
+        #     }).to_csv(os.path.join(case_dir, "radial_distribution.csv"),
+        #               index=False)
 
         summary.append(row)
 
@@ -118,8 +120,6 @@ def main():
     df = pd.DataFrame(summary)
     csv_path = os.path.join(OUTPUT_DIR, "sweep_summary.csv")
     df.to_csv(csv_path, index=False)
-    print(f"Summary → {csv_path}")
-    print(df.to_string(index=False))
 
     make_plots(df, amplitudes,
                output_dir=OUTPUT_DIR, diameter=DIAMETER, rpm=RPM, vinf=VINF,
