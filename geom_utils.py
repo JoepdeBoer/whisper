@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.typing as npt
 import openvsp as vsp
 from vspaero_config import R_ROOT_FRAC, R_TIP_FRAC, N_CURVE_PTS
 
@@ -30,6 +31,56 @@ def set_tangential_curve(geom_id, amplitude):
                   tvec.tolist(), valvec.tolist(),
                   vsp.PCHIP)
     vsp.Update()
+
+
+def set_pcurve_bezier(geom_id: str, pcurveid: int, r_vec: list, val_vec: list, continuity:list|None = None)-> None :
+    # TODO check input type geom_id
+    """
+    Set blade p-curve to cubic-bezier.
+    """
+
+    if not continuity:
+        vsp.SetPCurve(geom_id, pcurveid,
+                      val_vec, r_vec, vsp.CEDIT)
+        vsp.Update()
+        return
+    else:
+        raise NotImplementedError("Continuity setting is not yet implemented")
+
+
+def g1_pcurve_bezier(geom_id: str, pcurveid: int, pts: npt.NDArray[tuple[float, float, float]]) -> None:
+    """
+    Set G1 cubic bezier p-curve by pts (r, value, slope).
+
+    Args:
+        geom_id: Geometry ID
+        pcurveid: P-curve ID
+        points: List of tuples (r, value, slope) defining G1-continuous control points
+    """
+
+    if len(pts) < 2:
+        raise ValueError("At least 2 points required")
+
+    r, val, slope = pts[:, 0], pts[:, 1], pts[:, 2]
+
+    if not np.all(np.diff(r) > 0):
+        raise ValueError("r values must be strictly increasing")
+
+    # Segment lengths
+    dr = np.diff(r)
+
+    # Build control points: knot, cp1 (1/3), cp2 (2/3), knot...
+    r_vec = []
+    val_vec = []
+
+    for i in range(len(r) - 1):
+        r_vec.extend([r[i], r[i] + dr[i] / 3, r[i] + 2 * dr[i] / 3])
+        val_vec.extend([val[i], val[i] + slope[i] * dr[i] / 3, val[i + 1] - slope[i + 1] * dr[i] / 3])
+
+    r_vec.append(r[-1])
+    val_vec.append(val[-1])
+
+    set_pcurve_bezier(geom_id, pcurveid, r_vec, val_vec, continuity=None)
 
 
 def set_rpm(rpm):
