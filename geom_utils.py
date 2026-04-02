@@ -34,7 +34,6 @@ def set_tangential_curve(geom_id, amplitude):
 
 
 def set_pcurve_bezier(geom_id: str, pcurveid: int, r_vec: list, param_vec: list, continuity:list|None = None)-> None :
-    # TODO check input type geom_id
     """
     Set blade p-curve to cubic-bezier.
     """
