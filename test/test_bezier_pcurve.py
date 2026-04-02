@@ -6,11 +6,12 @@ import pytest
 import openvsp as vsp
 from pathlib import Path
 
-from geom_utils import find_prop_geom, set_blade_curve_bezier
+from geom_utils import find_prop_geom, set_pcurve_bezier, g1_pcurve_bezier
 from vspaero_config import VSP_FILE
 
 VSP_FILE = "nacapropeller-mod.vsp3"
 write_loc = str(Path(__file__).parent / "testbezier.vsp3")
+write_loc_g1 = str(Path(__file__).parent / "testbezier_g1.vsp3")
 
 @pytest.fixture(scope="session", autouse=True)
 def load_model() -> None:
@@ -25,6 +26,12 @@ def geom_id():
 @pytest.fixture
 def radial_vec():
     return [0.2, 0.3, 0.4, 0.5, 0.6625, 0.83, 1]
+
+@pytest.fixture
+def points():
+    return np.array([(0.2, 0, 1), (0.8, 0.6, 0), (1, 0, -3)])
+
+
 @pytest.fixture
 def valvec(radial_vec):
     len_values = len(radial_vec)
@@ -41,13 +48,26 @@ def valvec(radial_vec):
     return vec
 
 def test_blade_pcurve(geom_id, radial_vec, valvec):
+    """"testing the bezier pcurve function."""
     # 2. PCurve no continuity
-    set_blade_curve_bezier(geom_id, vsp.PROP_TANGENTIAL, valvec, radial_vec)
-    set_blade_curve_bezier(geom_id, vsp.PROP_CHORD, valvec, radial_vec)
-    set_blade_curve_bezier(geom_id, vsp.PROP_TWIST, valvec, radial_vec)
+    set_pcurve_bezier(geom_id, vsp.PROP_TANGENTIAL, valvec, radial_vec)
+    set_pcurve_bezier(geom_id, vsp.PROP_CHORD, valvec, radial_vec)
+    set_pcurve_bezier(geom_id, vsp.PROP_TWIST, valvec, radial_vec)
 
     # 4. save geometry immediately after Update()
     vsp.SetVSP3FileName(write_loc)
     vsp.WriteVSPFile(write_loc, vsp.SET_ALL)
+
+
+def test_g1_pcurve(geom_id, points):
+    """"testing the highlevel G1 continious bezier pcurve function."""
+    # 2. PCurve no
+    g1_pcurve_bezier(geom_id, vsp.PROP_TANGENTIAL, points)
+    g1_pcurve_bezier(geom_id, vsp.PROP_CHORD, points)
+    g1_pcurve_bezier(geom_id, vsp.PROP_TWIST, points)
+
+    # 4. save geometry immediately after Update()
+    vsp.SetVSP3FileName(write_loc_g1)
+    vsp.WriteVSPFile(write_loc_g1, vsp.SET_ALL)
 
 

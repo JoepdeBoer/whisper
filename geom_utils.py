@@ -33,7 +33,7 @@ def set_tangential_curve(geom_id, amplitude):
     vsp.Update()
 
 
-def set_pcurve_bezier(geom_id: str, pcurveid: int, r_vec: list, val_vec: list, continuity:list|None = None)-> None :
+def set_pcurve_bezier(geom_id: str, pcurveid: int, r_vec: list, param_vec: list, continuity:list|None = None)-> None :
     # TODO check input type geom_id
     """
     Set blade p-curve to cubic-bezier.
@@ -41,7 +41,7 @@ def set_pcurve_bezier(geom_id: str, pcurveid: int, r_vec: list, val_vec: list, c
 
     if not continuity:
         vsp.SetPCurve(geom_id, pcurveid,
-                      val_vec, r_vec, vsp.CEDIT)
+                      param_vec, r_vec, vsp.CEDIT)
         vsp.Update()
         return
     else:
@@ -71,16 +71,16 @@ def g1_pcurve_bezier(geom_id: str, pcurveid: int, pts: npt.NDArray[tuple[float, 
 
     # Build control points: knot, cp1 (1/3), cp2 (2/3), knot...
     r_vec = []
-    val_vec = []
+    param_vec = []
 
     for i in range(len(r) - 1):
         r_vec.extend([r[i], r[i] + dr[i] / 3, r[i] + 2 * dr[i] / 3])
-        val_vec.extend([val[i], val[i] + slope[i] * dr[i] / 3, val[i + 1] - slope[i + 1] * dr[i] / 3])
+        param_vec.extend([val[i], val[i] + slope[i] * dr[i] / 3, val[i + 1] - slope[i + 1] * dr[i] / 3])
 
     r_vec.append(r[-1])
-    val_vec.append(val[-1])
+    param_vec.append(val[-1])
 
-    set_pcurve_bezier(geom_id, pcurveid, r_vec, val_vec, continuity=None)
+    set_pcurve_bezier(geom_id, pcurveid, param_vec, r_vec, continuity=None)
 
 
 def set_rpm(rpm):
