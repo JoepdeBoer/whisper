@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -58,18 +58,15 @@ class PropGeom:
     tangential: NDArray[tuple[float, float, float]] # r/R, tangential/R, tangential/dr
     thickness: NDArray[tuple[float, float, float]]  # r/R , t/c , dt/c/dr
     CLi: NDArray[tuple[float, float, float]] # r/R, cli, dcli/dr/R `
-
-    airfoil_type: SectionType
-
-    root_cap_type: CapType
-    root_cap_length: float|None
-    root_cap_offset: float|None
-    root_cap_strength: float|None
-    tip_cap_type: CapType
-    tip_cap_length: float|None
-    tip_cap_offset: float|None
-    tip_cap_strength: float|None
-
+    airfoil_type: Optional[SectionType] = SectionType.XS_FOUR_SERIES
+    root_cap_type: Optional[CapType] = CapType.FLAT_END_CAP
+    tip_cap_type: Optional[CapType] = CapType.FLAT_END_CAP
+    root_cap_length: Optional[float|None] = None
+    root_cap_offset: Optional[float|None] = None
+    root_cap_strength: Optional[float|None] = None
+    tip_cap_length: Optional[float | None] = None
+    tip_cap_offset: Optional[float | None] = None
+    tip_cap_strength: Optional[float | None] = None
 
 @dataclass
 class MeshParams:
@@ -97,19 +94,18 @@ def find_set_by_name(name):
     raise RuntimeError(f"No VSP set named '{name}' found.")
 
 
-def set_tangential_curve(geom_id, amplitude):
+def set_tangential_curve(geom_id, max, rel_pos, r_hub):
     """
-    Set PCurve 8 (tangential) to a half-sine with given amplitude (m).
-      tan(r) = A * sin( pi * (r/R - r_root) / (r_tip - r_root) )
-    Zero at root and tip, peak at mid-span.
+    Cresting 3 knot cubic bezier with middle-knot maximum.
+        max is amplitude/R
+        pos is y/R
+        rhub is relative hub pos
     """
-    tvec   = np.linspace(R_ROOT_FRAC, R_TIP_FRAC, N_CURVE_PTS)
-    valvec = amplitude * np.sin(
-                np.pi * (tvec - R_ROOT_FRAC) / (R_TIP_FRAC - R_ROOT_FRAC))
-    vsp.SetPCurve(geom_id, vsp.PROP_TANGENTIAL,
-                  tvec.tolist(), valvec.tolist(),
-                  vsp.PCHIP)
-    vsp.Update()
+    slope_root = max/(rel_pos - r_hub)
+    slope_tip = max/(rel_pos-1)
+    pts = np.array([(r_hub, 0, slope_root), (rel_pos, max, 0), (1., 0, slope_tip)])
+    g1_pcurve_bezier(geom_id, vsp.PROP_TANGENTIAL, pts)
+
 
 
 def set_pcurve_bezier(geom_id: str, pcurveid: int, r_vec: list, param_vec: list, continuity:list|None = None)-> None :
@@ -174,11 +170,68 @@ def set_rpm(rpm):
         print("  WARNING: RPM parm not found in unsteady group")
 
 
-def handle_propgeom(prop_id: str, params: PropGeom)-> None:
+def handle_propgeom(prop_id: str, params: PropGeom) -> None:
+    # Diameter and blade count
     find_set(prop_id, "Diameter", "Design", params.R * 2)
+    find_set(prop_id, "NumBlade", "Design", params.nB)       # used by VSPAERO
+    find_set(prop_id, "Sym_Rot_N", "Sym", params.nB)         # rotational symmetry (visual)
 
+    # Hub extent and activity factor limit
+    find_set(prop_id, "RadiusFrac", "XSec_0", params.rhub_R)
+    find_set(prop_id, "AFLimit", "Design", params.rhub_R)
+
+    # Chord construction position (fraction of chord used to place XSecs)
+    find_set(prop_id, "ConstructXoC", "Design", params.constructXc)
+
+    # Airfoil section type on all blade XSecs
+    if params.airfoil_type is not None:
+        xsec_surf = vsp.GetXSecSurf(prop_id, 0)
+        for i in range(vsp.GetNumXSec(xsec_surf)):
+            vsp.ChangeXSecShape(xsec_surf, i, params.airfoil_type.value)
+
+    # Blade distribution curves — each array is (r/R, value, slope)
+    g1_pcurve_bezier(prop_id, vsp.PROP_CHORD,      params.chord)
+    g1_pcurve_bezier(prop_id, vsp.PROP_TWIST,      params.twist)
+    g1_pcurve_bezier(prop_id, vsp.PROP_RAKE,       params.axial)
+    g1_pcurve_bezier(prop_id, vsp.PROP_TANGENTIAL, params.tangential)
+    g1_pcurve_bezier(prop_id, vsp.PROP_THICK,      params.thickness)
+    g1_pcurve_bezier(prop_id, vsp.PROP_CLI,        params.CLi)
+
+    # Root cap (CapUMin = inboard end)
+    find_set(prop_id, "CapUMinOption", "EndCap", params.root_cap_type.value)
+    if params.root_cap_length is not None:
+        find_set(prop_id, "CapUMinLength",   "EndCap", params.root_cap_length)
+    if params.root_cap_offset is not None:
+        find_set(prop_id, "CapUMinOffset",   "EndCap", params.root_cap_offset)
+    if params.root_cap_strength is not None:
+        find_set(prop_id, "CapUMinStrength", "EndCap", params.root_cap_strength)
+
+    # Tip cap (CapUMax = outboard end)
+    find_set(prop_id, "CapUMaxOption", "EndCap", params.tip_cap_type.value)
+    if params.tip_cap_length is not None:
+        find_set(prop_id, "CapUMaxLength",   "EndCap", params.tip_cap_length)
+    if params.tip_cap_offset is not None:
+        find_set(prop_id, "CapUMaxOffset",   "EndCap", params.tip_cap_offset)
+    if params.tip_cap_strength is not None:
+        find_set(prop_id, "CapUMaxStrength", "EndCap", params.tip_cap_strength)
+
+    vsp.Update()
+
+
+
+
+
+def handle_mesh(prop_id: str, params: MeshParams) -> None:
+    find_set(prop_id, "Tess_U",      "Shape",  params.Num_U)
+    find_set(prop_id, "Tess_W",      "Shape",  params.Num_W)
+    find_set(prop_id, "CapUMinTess", "EndCap", params.CapTess)
+    find_set(prop_id, "LECluster",   "Design", params.le_clustering)
+    find_set(prop_id, "TECluster",   "Design", params.te_clustering)
+    find_set(prop_id, "InCluster",   "Design", params.root_clustering)
+    find_set(prop_id, "OutCluster",  "Design", params.tip_clustering)
+    vsp.Update()
 
 
 def find_set(parm_container_id: str, parm_name: str, group_name: str, value: Any) -> None:
-    id = vsp.FindParm(parm_container_id, parm_name, group_name)
-    vsp.SetParmVal(id, value)
+    parm_id = vsp.FindParm(parm_container_id, parm_name, group_name)
+    vsp.SetParmVal(parm_id, value)
