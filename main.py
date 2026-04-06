@@ -18,7 +18,7 @@ import pandas as pd
 import openvsp as vsp
 from vspaero_config import *
 from plots import make_plots
-from geom_utils import find_prop_geom, set_rpm, set_tangential_curve
+from prop_utils import find_prop_geom, set_rpm, set_tangential_curve
 from read_result import parse_results
 from prep_vspaero import run_vspaero
 
@@ -31,6 +31,7 @@ def main():
                  f"Run from your Design_code folder.")
 
     amplitudes = np.linspace(-AMPLITUDE_FRAC*R, AMPLITUDE_FRAC * R, N_STEPS)
+    locations =
 
     print("=" * 60)
     print("Propeller Tangential Curve Sweep")
@@ -69,6 +70,7 @@ def main():
 
         # 2. set tangential PCurve
         set_tangential_curve(geom_id, A)
+        vsp.Update() # TODO find out when and when not req
 
         # 3. set RPM on unsteady group
         set_rpm(RPM)
