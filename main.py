@@ -16,22 +16,37 @@ import sys
 import numpy as np
 import pandas as pd
 import openvsp as vsp
+from baseline import baseline_prop, mesh_params
+from plots_2d import make_plots_2d
 from vspaero_config import *
 from plots import make_plots
-from prop_utils import find_prop_geom, set_rpm, set_tangential_curve
+from prop_utils import find_prop_geom, set_rpm, set_tangential_curve, handle_mesh, handle_propgeom
 from read_result import parse_results
 from prep_vspaero import run_vspaero
 
 
 def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
     if not os.path.isfile(VSP_FILE):
         sys.exit(f"ERROR: '{VSP_FILE}' not found.\n"
                  f"Run from your Design_code folder.")
 
+    vsp.ClearVSPModel()
+
+    vsp.SetVSP3FileName(file_name)
+    geom_id = vsp.AddGeom("PROP")
+    handle_propgeom(geom_id, params=baseline_prop)
+    handle_mesh(geom_id, params=mesh_params)
+
+    vsp.Update()
+    rootstart = vsp.GetParmVal(vsp.FindParm(geom_id, "RadiusFrac", "XSec_0"))
+
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
     amplitudes = np.linspace(-AMPLITUDE_FRAC*R, AMPLITUDE_FRAC * R, N_STEPS)
-    locations =
+    locations = np.linspace(rootstart+0.1, .9, N_STEPS)
+    case_counter = 0
+    total_cases = N_STEPS * N_STEPS
 
     print("=" * 60)
     print("Propeller Tangential Curve Sweep")
@@ -53,81 +68,99 @@ def main():
 
     summary = []
 
-    for idx, A in enumerate(amplitudes):
-        A_frac   = A / R
-        label    = f"A{idx:02d}_amp{round(A*1000)}mm"
-        case_dir = os.path.join(OUTPUT_DIR, label)
-        os.makedirs(case_dir, exist_ok=True)
-        case_vsp = os.path.join(case_dir, f"{label}.vsp3")
+    for a_idx, A in enumerate(amplitudes):
+        for p_idx, pos in enumerate(locations):
+            case_counter += 1
+            case_id = f"A{a_idx:02d}P{p_idx:02d}"
+            A_frac   = A / R
+            case_dir = os.path.join(OUTPUT_DIR, case_id)
+            os.makedirs(case_dir, exist_ok=True)
+            case_vsp = os.path.join(case_dir, f"{case_id}.vsp3")
 
-        print(f"[{idx+1}/{N_STEPS}]  A = {A*1000:.2f} mm  (A/R = {A_frac:.3f})")
+            print(f"[{case_counter}/{total_cases}] "
+                  f"A={A * 1000:+.2f}mm (A/R={A_frac:+.4f})  "
+                  f"pos={pos:.4f} (r_norm)")
 
-        # 1. fresh load every iteration — no state carried over
-        vsp.ClearVSPModel()
-        vsp.ReadVSPFile(VSP_FILE)
-        vsp.Update()
-        geom_id = find_prop_geom()
 
-        # 2. set tangential PCurve
-        set_tangential_curve(geom_id, A)
-        vsp.Update() # TODO find out when and when not req
+            # 1. fresh load every iteration — no state carried over
+            vsp.ClearVSPModel()
+            vsp.ReadVSPFile(VSP_FILE)
+            geom_id = find_prop_geom()
 
-        # 3. set RPM on unsteady group
-        set_rpm(RPM)
+            # 2. set tangential PCurve
 
-        # 4. save geometry immediately after Update()
-        vsp.SetVSP3FileName(case_vsp)
-        vsp.WriteVSPFile(case_vsp, vsp.SET_ALL)
-        print(f"    Geometry saved → {case_vsp}")
+            set_tangential_curve(geom_id, A, pos, rootstart)
 
-        # 5. run VSPAERO — set filename so output files go to case_dir
-        rid = run_vspaero(omega=OMEGA, R=R, mode=ANALYSIS_MODE, rho=RHO,
-                          vref=VREF, mref=MREF, sref=SREF, bref=BREF,
-                          cref=CREF, Reref=RE_CREF, nwakenodes=NUM_WAKE_NODES,
-                          ncpu=NCPU, wakeiter=WAKE_NUM_ITER, revs=NUM_REVS)
-        row = dict(
-            step            = idx,
-            amplitude_m     = round(float(A), 6),
-            amplitude_frac_R= round(float(A_frac), 6),
-            # CT_=None, CQ=None, Thrust_N=None, Torque_Nm=None, FOM=None
-        )
 
-        # parse from output files (more reliable than GetDoubleResults)
-        res = parse_results(case_dir, label, avg_last_n=AVG_LAST_N)
-        for k in ("CT_H", "CQ_H", "Thrust_total", "Moment_total", "FOM_total", "CT_h", "CQ_h", "Thrust", "Moment", "FOM"):
-            row[k] = res[k]
+            # 3. set RPM on unsteady group
+            set_rpm(RPM)
 
-        if not rid:
-            print("    WARNING: ExecAnalysis returned no rid")
+            # 4. save geometry immediately after Update()
+            vsp.SetVSP3FileName(case_vsp)
+            vsp.Update()
+            vsp.WriteVSPFile(case_vsp, vsp.SET_ALL)
+            print(f"    Geometry saved → {case_vsp}")
 
-        def fmt(v, spec): return format(v, spec) if v is not None else "N/A"
-        print(f"CT={fmt(res['CT_H'],'.5f')}  "
-              f"CQ={fmt(res['CQ_H'],'.5f')}  "
-              f"T={fmt(res['Thrust_total'],'.3f')} N  "
-              f"FOM={fmt(res['FOM_total'],'.4f')}")
+            # 5. run VSPAERO — set filename so output files go to case_dir
+            rid = run_vspaero(omega=OMEGA, R=R, mode=ANALYSIS_MODE, rho=RHO,
+                              vref=VREF, mref=MREF, sref=SREF, bref=BREF,
+                              cref=CREF, Reref=RE_CREF, nwakenodes=NUM_WAKE_NODES,
+                              ncpu=NCPU, wakeiter=WAKE_NUM_ITER, revs=NUM_REVS)
 
-        # if res.get("r_norm"):
-        #     pd.DataFrame({
-        #         "r_norm": res["r_norm"],
-        #         "CT_h": res["CT_h"],
-        #         "CQ_h": res["CQ_h"],
-        #         "Thrust" : res["Thrust"],
-        #
-        #     }).to_csv(os.path.join(case_dir, "radial_distribution.csv"),
-        #               index=False)
+            # 6. Build row with metadata
+            row = {
+                'case_id': case_id,
+                'amplitude_idx': a_idx,
+                'position_idx': p_idx,
+                'amplitude_m': round(float(A), 6),
+                'amplitude_frac_R': round(float(A_frac), 6),
+                'position_frac_R': round(float(pos), 6),
+            }
 
-        summary.append(row)
+            # parse from output files (more reliable than GetDoubleResults)
+            res = parse_results(case_dir, case_id, avg_last_n=AVG_LAST_N)
+            for k in ("CT_H", "CQ_H", "Thrust_total", "Moment_total", "FOM_total", "CT_h",
+                      "CQ_h", "Thrust", "Moment", "FOM"):
+                row[k] = res[k]
+
+            if not rid:
+                print("   ⚠ WARNING: ExecAnalysis returned no rid")
+
+            def fmt(v, spec):
+                return format(v, spec) if v is not None else "N/A"
+
+            print(f"CT={fmt(res['CT_H'],'.5f')}  "
+                  f"CQ={fmt(res['CQ_H'],'.5f')}  "
+                  f"T={fmt(res['Thrust_total'],'.3f')} N  "
+                  f"FOM={fmt(res['FOM_total'],'.4f')}")
+
+            summary.append(row)
 
     # ── summary CSV ───────────────────────────────────────────────────────────
     df = pd.DataFrame(summary)
-    csv_path = os.path.join(OUTPUT_DIR, "sweep_summary.csv")
+    csv_path = os.path.join(OUTPUT_DIR, "sweep_2d_summary.csv")
     df.to_csv(csv_path, index=False)
+    print(f"\n✓ Summary saved → {csv_path}")
 
-    make_plots(df, amplitudes,
-               output_dir=OUTPUT_DIR, diameter=DIAMETER, rpm=RPM, vinf=VINF,
-               amplitude_frac=AMPLITUDE_FRAC, r_root_frac=R_ROOT_FRAC,
-               r_tip_frac=R_TIP_FRAC, n_steps=N_STEPS, radius=R)
-    print(f"\nAll done. Results in: {OUTPUT_DIR}/")
+    # make_plots(df, amplitudes,
+    #            output_dir=OUTPUT_DIR, diameter=DIAMETER, rpm=RPM, vinf=VINF,
+    #            amplitude_frac=AMPLITUDE_FRAC, r_root_frac=R_ROOT_FRAC,
+    #            r_tip_frac=R_TIP_FRAC, n_steps=N_STEPS, radius=R)
+    # print(f"\nAll done. Results in: {OUTPUT_DIR}/")
+
+    # ── Generate 2D plots ──────────────────────────────────────────────────
+    make_plots_2d(
+        df, amplitudes, locations,
+        output_dir=OUTPUT_DIR,
+        diameter=DIAMETER, rpm=RPM, vinf=VINF,
+        amplitude_frac=AMPLITUDE_FRAC,
+        r_root_frac=R_ROOT_FRAC,
+        r_tip_frac=R_TIP_FRAC,
+        n_steps=N_STEPS,
+        radius=R
+    )
+
+    print(f"\n✓ All done. Results in: {OUTPUT_DIR}/")
 
 
 if __name__ == "__main__":

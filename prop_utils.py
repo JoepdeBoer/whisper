@@ -183,11 +183,16 @@ def handle_propgeom(prop_id: str, params: PropGeom) -> None:
     # Chord construction position (fraction of chord used to place XSecs)
     find_set(prop_id, "ConstructXoC", "Design", params.constructXc)
 
-    # Airfoil section type on all blade XSecs
-    if params.airfoil_type is not None:
-        xsec_surf = vsp.GetXSecSurf(prop_id, 0)
-        for i in range(vsp.GetNumXSec(xsec_surf)):
+    # Airfoil section type on all blade XSecs, with invert cleared
+    xsec_surf = vsp.GetXSecSurf(prop_id, 0)
+    for i in range(vsp.GetNumXSec(xsec_surf)):
+        if params.airfoil_type is not None:
             vsp.ChangeXSecShape(xsec_surf, i, params.airfoil_type.value)
+        xsec_id = vsp.GetXSec(xsec_surf, i)
+        parm_id = vsp.FindParm(xsec_id, "Invert", "XSecCurve")
+        if parm_id:
+            vsp.SetParmVal(parm_id, False)  # ensure not inverted
+            print("setting inverted to False")
 
     # Blade distribution curves — each array is (r/R, value, slope)
     g1_pcurve_bezier(prop_id, vsp.PROP_CHORD,      params.chord)
