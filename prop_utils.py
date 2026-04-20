@@ -3,7 +3,8 @@ from typing import Any, Optional
 import numpy as np
 import numpy.typing as npt
 
-from vspaero_config import R_ROOT_FRAC, R_TIP_FRAC, N_CURVE_PTS, DIAMETER
+from scipy.interpolate import CubicHermiteSpline
+
 
 from dataclasses import dataclass
 from enum import Enum
@@ -101,9 +102,9 @@ def set_tangential_curve(geom_id, max, rel_pos, r_hub):
         pos is y/R
         rhub is relative hub pos
     """
-    slope_root = max/(rel_pos - r_hub)
-    slope_tip = max/(rel_pos-1)
-    pts = np.array([(r_hub, 0, slope_root), (rel_pos, max, 0), (1., 0, slope_tip)])
+    _, slope_tip = find_monotone_slopes(rel_pos, max, 0, 0) # for function domain [0,1]
+    medium_slope = slope_tip[1]/2 / (1-r_hub) # half the maximum allowed, scale due to domain
+    pts = np.array([(r_hub, 0, 0), (rel_pos, max, 0), (1., 0, medium_slope)])
     g1_pcurve_bezier(geom_id, vsp.PROP_TANGENTIAL, pts)
 
 
@@ -189,10 +190,10 @@ def handle_propgeom(prop_id: str, params: PropGeom) -> None:
         if params.airfoil_type is not None:
             vsp.ChangeXSecShape(xsec_surf, i, params.airfoil_type.value)
         xsec_id = vsp.GetXSec(xsec_surf, i)
-        parm_id = vsp.FindParm(xsec_id, "Invert", "XSecCurve")
-        if parm_id:
-            vsp.SetParmVal(parm_id, False)  # ensure not inverted
-            print("setting inverted to False")
+        invert_id = vsp.GetXSecParm(xsec_id, "Invert")
+
+        if invert_id:
+            vsp.SetParmVal(invert_id, False)  # ensure not inverted
 
     # Blade distribution curves — each array is (r/R, value, slope)
     g1_pcurve_bezier(prop_id, vsp.PROP_CHORD,      params.chord)
@@ -223,9 +224,6 @@ def handle_propgeom(prop_id: str, params: PropGeom) -> None:
     vsp.Update()
 
 
-
-
-
 def handle_mesh(prop_id: str, params: MeshParams) -> None:
     find_set(prop_id, "Tess_U",      "Shape",  params.Num_U)
     find_set(prop_id, "Tess_W",      "Shape",  params.Num_W)
@@ -240,3 +238,61 @@ def handle_mesh(prop_id: str, params: MeshParams) -> None:
 def find_set(parm_container_id: str, parm_name: str, group_name: str, value: Any) -> None:
     parm_id = vsp.FindParm(parm_container_id, parm_name, group_name)
     vsp.SetParmVal(parm_id, value)
+
+
+def beta_distribution(x, maximum=30, peak_location=0.8, sharpness=6):
+    """
+    distribution using skewed Beta function
+
+    Parameters:
+    - max_sweep: peak value
+    - peak_location: where max occurs (0–1)
+    - sharpness: overall curvature (higher = sharper peak)
+
+    Returns:
+    - y: distribution
+    """
+
+    # Solve for a and b from peak location
+    a = peak_location * sharpness
+    b = (1 - peak_location) * sharpness
+
+    y = (x**a) * ((1 - x)**b)
+
+    # Normalize to maximum
+    y = y / np.max(y) * maximum
+
+    return y
+
+def find_monotone_slopes(x_peak, M, f0=0, f1=0):
+    """
+    Find slopes at endpoints that satisfy monotonicity constraints.
+    for monotone piecewise cubic spline x in [0,1]
+
+    Returns:
+    --------
+    slope0_range : tuple
+        (min_slope, max_slope) at t=0
+    slope1_range : tuple
+        (min_slope, max_slope) at t=1
+    """
+    h1 = x_peak
+    delta1 = (M - f0) / h1
+
+    h2 = 1 - x_peak
+    delta2 = (f1 - M) / h2
+
+    # For segment 1: slope0 must satisfy 0 <= slope0/delta1 <= 3
+    slope0_min = 0
+    slope0_max = 3 * delta1
+
+    # For segment 2: slope1 must satisfy 0 <= slope1/delta2 <= 3
+    # Note: delta2 is negative, so inequality flips
+    if delta2 < 0:
+        slope1_min = 3 * delta2  # more negative
+        slope1_max = 0
+    else:
+        slope1_min = 0
+        slope1_max = 3 * delta2
+
+    return (slope0_min, slope0_max), (slope1_min, slope1_max)

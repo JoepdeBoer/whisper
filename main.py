@@ -19,8 +19,7 @@ import openvsp as vsp
 from baseline import baseline_prop, mesh_params
 from plots_2d import make_plots_2d
 from vspaero_config import *
-from plots import make_plots
-from prop_utils import find_prop_geom, set_rpm, set_tangential_curve, handle_mesh, handle_propgeom
+from prop_utils import set_rpm, set_tangential_curve, handle_mesh, handle_propgeom
 from read_result import parse_results
 from prep_vspaero import run_vspaero
 
@@ -32,7 +31,6 @@ def main():
 
     vsp.ClearVSPModel()
 
-    vsp.SetVSP3FileName(file_name)
     geom_id = vsp.AddGeom("PROP")
     handle_propgeom(geom_id, params=baseline_prop)
     handle_mesh(geom_id, params=mesh_params)
@@ -43,8 +41,8 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-    amplitudes = np.linspace(-AMPLITUDE_FRAC*R, AMPLITUDE_FRAC * R, N_STEPS)
-    locations = np.linspace(rootstart+0.1, .9, N_STEPS)
+    amplitudes = np.linspace(-AMPLITUDE_FRAC, AMPLITUDE_FRAC, N_STEPS)  # Remove values very close to zero
+    locations = np.linspace(rootstart+0.2, .8, N_STEPS)
     case_counter = 0
     total_cases = N_STEPS * N_STEPS
 
@@ -72,7 +70,7 @@ def main():
         for p_idx, pos in enumerate(locations):
             case_counter += 1
             case_id = f"A{a_idx:02d}P{p_idx:02d}"
-            A_frac   = A / R
+            A_frac  = A
             case_dir = os.path.join(OUTPUT_DIR, case_id)
             os.makedirs(case_dir, exist_ok=True)
             case_vsp = os.path.join(case_dir, f"{case_id}.vsp3")
@@ -84,13 +82,13 @@ def main():
 
             # 1. fresh load every iteration — no state carried over
             vsp.ClearVSPModel()
-            vsp.ReadVSPFile(VSP_FILE)
-            geom_id = find_prop_geom()
+            geom_id = vsp.AddGeom("PROP")
+            handle_propgeom(geom_id, params=baseline_prop)
+            handle_mesh(geom_id, params=mesh_params)
+
 
             # 2. set tangential PCurve
-
-            set_tangential_curve(geom_id, A, pos, rootstart)
-
+            set_tangential_curve(geom_id, A_frac, pos, rootstart)
 
             # 3. set RPM on unsteady group
             set_rpm(RPM)
@@ -142,11 +140,6 @@ def main():
     df.to_csv(csv_path, index=False)
     print(f"\n✓ Summary saved → {csv_path}")
 
-    # make_plots(df, amplitudes,
-    #            output_dir=OUTPUT_DIR, diameter=DIAMETER, rpm=RPM, vinf=VINF,
-    #            amplitude_frac=AMPLITUDE_FRAC, r_root_frac=R_ROOT_FRAC,
-    #            r_tip_frac=R_TIP_FRAC, n_steps=N_STEPS, radius=R)
-    # print(f"\nAll done. Results in: {OUTPUT_DIR}/")
 
     # ── Generate 2D plots ──────────────────────────────────────────────────
     make_plots_2d(
