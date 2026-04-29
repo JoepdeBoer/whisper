@@ -36,7 +36,8 @@ def prep_sweep_analysis(omega: float,
                         ncpu: int,
                         wakeiter: int | None = None,
                         revs: int | None = None,
-                        time_step: int | None = None,
+                        time_step_size: float | None = None,
+                        time_steps: int | None = None,
                         ) -> None:
     """Applies the given settings to a sweep analysis and updates analysis manager."""
 
@@ -77,11 +78,18 @@ def prep_sweep_analysis(omega: float,
         vsp.SetIntAnalysisInput(sw, "WakeNumIter", [wakeiter])  # not used in unsteady analysis
 
     # Time stepping
-    if not time_step:
+    if not time_steps:
         vsp.SetIntAnalysisInput(sw, "AutoTimeStepFlag", [True])
+        vsp.SetIntAnalysisInput(sw, "AutoTimeNumRevs", [int(revs)])
     else:
-        raise NotImplementedError('No manual time step ')
-    vsp.SetIntAnalysisInput(sw, "AutoTimeNumRevs", [int(revs)])
+        if not time_step_size:
+            raise ValueError("No time step size specified")
+        vsp.SetIntAnalysisInput(sw, "AutoTimeStepFlag", [False])
+        vsp.SetIntAnalysisInput(sw, "TimeStepSize", [time_step_size])
+        vsp.SetIntAnalysisInput(sw, "TimeSteps", [time_steps])
+
+
+
 
     # CPU
     vsp.SetIntAnalysisInput(sw, "NCPU", [ncpu])

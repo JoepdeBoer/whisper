@@ -2,7 +2,7 @@
 Propeller Tangential Curve Sweep — Geometry + VSPAERO  VLM
 ==================================================================
 For each amplitude step:
-  1. Load base geometry (nacapropeller-mod.vsp3)
+  1. Load base geometry
   2. Set tangential PCurve (index 8) to a half-sine shape
   3. Save modified .vsp3
   4. Set RPM on unsteady group 0
@@ -16,10 +16,10 @@ import sys
 import numpy as np
 import pandas as pd
 import openvsp as vsp
-from baseline import baseline_prop, mesh_params
+from baseline import mesh_params
 from plots_2d import make_plots_2d
 from vspaero_config import *
-from prop_utils import set_rpm, set_tangential_curve, handle_mesh, handle_propgeom
+from prop_utils import set_rpm, set_tangential_curve, handle_mesh, find_prop_geom
 from read_result import parse_results
 from prep_vspaero import run_vspaero
 
@@ -30,11 +30,9 @@ def main():
                  f"Run from your Design_code folder.")
 
     vsp.ClearVSPModel()
-
-    geom_id = vsp.AddGeom("PROP")
-    handle_propgeom(geom_id, params=baseline_prop)
+    vsp.ReadVSPFile(VSP_FILE)
+    geom_id = find_prop_geom()
     handle_mesh(geom_id, params=mesh_params)
-
     vsp.Update()
     rootstart = vsp.GetParmVal(vsp.FindParm(geom_id, "RadiusFrac", "XSec_0"))
 
@@ -82,8 +80,8 @@ def main():
 
             # 1. fresh load every iteration — no state carried over
             vsp.ClearVSPModel()
-            geom_id = vsp.AddGeom("PROP")
-            handle_propgeom(geom_id, params=baseline_prop)
+            vsp.ReadVSPFile(VSP_FILE)
+            geom_id = find_prop_geom()
             handle_mesh(geom_id, params=mesh_params)
 
 
