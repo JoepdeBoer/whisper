@@ -16,10 +16,9 @@ import sys
 import numpy as np
 import pandas as pd
 import openvsp as vsp
-from baseline import mesh_params
 from plots_2d import make_plots_2d
 from vspaero_config import *
-from prop_utils import set_rpm, set_tangential_curve, handle_mesh, find_prop_geom
+from prop_utils import set_rpm, set_tangential_curve, find_prop_geom
 from read_result import parse_results
 from prep_vspaero import run_vspaero
 
