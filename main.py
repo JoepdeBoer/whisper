@@ -32,14 +32,14 @@ def main():
     vsp.ClearVSPModel()
     vsp.ReadVSPFile(VSP_FILE)
     geom_id = find_prop_geom()
-    handle_mesh(geom_id, params=mesh_params)
+    # handle_mesh(geom_id, params=mesh_params)
     vsp.Update()
     rootstart = vsp.GetParmVal(vsp.FindParm(geom_id, "RadiusFrac", "XSec_0"))
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-    amplitudes = np.linspace(-AMPLITUDE_FRAC, AMPLITUDE_FRAC, N_STEPS)  # Remove values very close to zero
+    amplitudes = np.linspace(-AMPLITUDE_FRAC, 0, N_STEPS, endpoint=False)  # Remove values very close to zero
     locations = np.linspace(rootstart+0.2, .8, N_STEPS)
     case_counter = 0
     total_cases = N_STEPS * N_STEPS
@@ -82,11 +82,11 @@ def main():
             vsp.ClearVSPModel()
             vsp.ReadVSPFile(VSP_FILE)
             geom_id = find_prop_geom()
-            handle_mesh(geom_id, params=mesh_params)
+            # handle_mesh(geom_id, params=mesh_params)
 
 
             # 2. set tangential PCurve
-            set_tangential_curve(geom_id, A_frac, pos, rootstart)
+            set_tangential_curve(geom_id, A_frac, pos)
 
             # 3. set RPM on unsteady group
             set_rpm(RPM)

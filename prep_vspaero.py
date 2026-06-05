@@ -116,7 +116,7 @@ def run_vspaero(omega: float,
     set_prop_blades_mode(mode = mode)
     vspaero_compute_geometry()
     prep_sweep_analysis(omega, R, mode, rho, vref, mref, sref, bref,cref, Reref, nwakenodes,
-                        ncpu, wakeiter=wakeiter, revs=revs, time_step=time_step)
+                        ncpu, wakeiter=wakeiter, revs=revs, time_step_size=time_step)
 
     rid = vsp.ExecAnalysis(_SWEEP)
     if not rid:

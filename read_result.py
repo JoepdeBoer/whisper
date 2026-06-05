@@ -62,6 +62,16 @@ def parse_rotor(rotor_file, avg_last_n=None):
     return result
 
 
+def _read_bref(lod_file):
+    """Read the Bref_ reference length from a .lod file header."""
+    with open(lod_file) as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped.startswith("Bref_"):
+                return float(stripped.split()[1])
+    raise ValueError(f"Bref_ not found in {lod_file}")
+
+
 def _read_lod_dataframe(lod_file):
     """Read a .lod file into a DataFrame, skipping the reference-value header.
 
@@ -76,9 +86,9 @@ def _read_lod_dataframe(lod_file):
     # Find the column header: starts with "Time" or "Iter", contains "VortexSheet"
     header_idx = None
     for i, line in enumerate(lines):
-        stripped = line.strip()
-        if ("VortexSheet" in stripped
-                and (stripped.startswith("Time") or stripped.startswith("Iter"))):
+        if not line.strip():  # Skip empty lines
+            continue
+        if "VortexSheet" in line and ("Time" in line or "Iter" in line):
             header_idx = i
             break
     if header_idx is None:
@@ -102,7 +112,7 @@ def _read_lod_dataframe(lod_file):
 
     df["_step"] = pd.to_numeric(df[step_col], errors="coerce")
 
-    for col in ("roverR", "CT_h", "CQ_h", "dSpan", "Diameter", "VortexSheet"):
+    for col in ("roverR", "CT_h", "CQ_h", "dSpan", "Diameter", "VortexSheet", "Yavg"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
@@ -112,6 +122,8 @@ def parse_lod(lod_file, avg_last_n=None):
 
     Works for both unsteady (``Time`` column) and pseudo-steady (``Iter``
     column) output.
+
+    Warning! : r_norm(r/R) uses the Bref in the lod file to compute r/R
 
     Parameters
     ----------
@@ -123,13 +135,17 @@ def parse_lod(lod_file, avg_last_n=None):
     -------
     dict with keys: r_norm, "CT_h", "CQ_h", "Thrust", "Moment", "FOM"  (lists, one entry per radial
     station, summed across all blades).
+
+
     """
-    result = dict(r_norm=[], dCT_dR=[], dCQ_dR=[])
+    result = dict(r_norm=[], dCT_dR=[], dCQ_dR=[], Thrust=[])
     if not os.path.isfile(lod_file):
         return result
 
     try:
         df = _read_lod_dataframe(lod_file)
+        bref = _read_bref(lod_file)
+        df["abs_Yavg"] = df["Yavg"].abs()
 
         # Select timesteps / iterations to average over
         steps = df["_step"].unique()
@@ -139,19 +155,37 @@ def parse_lod(lod_file, avg_last_n=None):
             last_steps = steps[-1:]
         subset = df[df["_step"].isin(last_steps)]
 
-        # For each radial station: sum across blades within each step,
-        # then average across steps.
-        per_step = (subset.groupby(["_step", "roverR"])[[ "CT_h", "CQ_h", "Thrust", "Moment", "FOM"]]
-                    .sum()
-                    .reset_index())
-        avg = per_step.groupby("roverR")[["CT_h", "CQ_h", "Thrust", "Moment", "FOM"]].mean()
+        # For each radial station: sum aerodynamic loads across blades within each
+        # step, average abs(Yavg) to get the physical radial position, then
+        # average across steps.
+        per_step = (
+            subset.groupby(["_step", "roverR"])
+            .agg(
+                CT_h=("CT_h", "sum"),
+                CQ_h=("CQ_h", "sum"),
+                Thrust=("Thrust", "sum"),
+                Moment=("Moment", "sum"),
+                FOM=("FOM", "sum"),
+                abs_Yavg=("abs_Yavg", "mean"),
+            )
+            .reset_index()
+        )
+        avg = per_step.groupby("roverR").agg(
+            CT_h=("CT_h", "mean"),
+            CQ_h=("CQ_h", "mean"),
+            Thrust=("Thrust", "mean"),
+            Moment=("Moment", "mean"),
+            FOM=("FOM", "mean"),
+            abs_Yavg=("abs_Yavg", "mean"),
+        )
 
-        result["r_norm"]  = (avg.index  + (1-avg.index[-1])).tolist() # TODO remove hardcoded hub fraction/ sometimes exceeding 1.0 bug?
-        result["CT_h"] = avg["CT_h"]
-        result["CQ_h"] = avg["CQ_h"]
-        result["Thrust"] = avg["Thrust"]
-        result["Moment"] = avg["Moment"]
-        result["FOM"] = avg["FOM"]
+        result["r_norm"] = (avg["abs_Yavg"] / bref).tolist()
+        result["r"] = avg["abs_Yavg"].tolist()
+        result["CT_h"] = avg["CT_h"].tolist()
+        result["CQ_h"] = avg["CQ_h"].tolist()
+        result["Thrust"] = avg["Thrust"].tolist()
+        result["Moment"] = avg["Moment"].tolist()
+        result["FOM"] = avg["FOM"].tolist()
 
     except Exception as e:
         print(f"    WARNING: could not parse lod file: {e}")
