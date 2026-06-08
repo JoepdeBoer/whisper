@@ -80,43 +80,6 @@ def main():
             vsp.ReadVSPFile(VSP_FILE)
             print("    Finding geom...", flush=True)
             geom_id = find_prop_geom()
-            # handle_mesh(geom_id, params=mesh_params)
-
-            # 2. set tangential PCurve
-            # print("    Setting curve...", flush=True)
-            # valvec = vsp.PCurveGetValVec(geom_id, vsp.PROP_TANGENTIAL)
-            # tvec = vsp.PCurveGetTVec(geom_id, vsp.PROP_TANGENTIAL)
-            # bspline = cubicbez_to_bspline(tvec, valvec)
-            # slope = A/((1-pos)*2/3)
-            # cpsweep = np.array([
-            #     [tvec[0], 0],
-            #     [(pos-tvec[0])/3+tvec[0], 0],
-            #     [(pos-tvec[0])*2/3+tvec[0], A],
-            #     [pos, A],
-            #     [(1-pos)/3 + pos, A],
-            #     [(1-pos)*2/3 + pos, slope*((1-pos)/3)],
-            #     [1, 0]
-            # ])
-            # knots_sweep = np.array([
-            #     0, 0, 0, 0,
-            #     pos,pos,pos,
-            #     1, 1, 1, 1
-            # ])
-            # sweepspline = BSpline(knots_sweep, cpsweep, k=3)
-            # combined = sum_bsplines(sweepspline, bspline)
-            #
-            # t = np.linspace(0, 1, 400)
-            # eval_bspline = bspline(t)
-            # eval_sweep = sweepspline(t)
-            # eval_combined = combined(t)
-            # plt.scatter(tvec, valvec, label="initial-cps")
-            # plt.scatter(sweepspline.c[:,0], sweepspline.c[:,1], label="sweep")
-            # plt.plot(eval_bspline[:,0], eval_bspline[:,1], label="bspline")
-            # plt.plot(eval_sweep[:,0], eval_sweep[:,1], label="sweep")
-            # plt.plot(eval_combined[:,0], eval_combined[:,1], label="combined")
-            # plt.legend()
-            # plt.show()
-
             set_tangential_curve(geom_id, A_frac, pos)
             print("    Tangential curve set", flush=True)
 

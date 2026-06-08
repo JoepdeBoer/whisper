@@ -444,7 +444,7 @@ def match_radial_thrust_twist(
     Returns
     -------
     dict with keys:
-        "twist_pts"      – final (N, 2) PCHIP knots
+        "twist_pts"      – final (N, 2) bezier spline knots
         "converged"      – bool
         "n_iter"         – iterations performed
         "rms_history"    – list[float], one entry per iteration

@@ -3,7 +3,7 @@ Propeller Tangential Curve Sweep — Geometry + VSPAERO  VLM
 ==================================================================
 For each amplitude step:
   1. Load base geometry
-  2. Set tangential PCurve (index 8) to a half-sine shape
+  2.
   3. Save modified .vsp3
   4. Set RPM on unsteady group 0
   5. Run VSPAERO un/pseudo-steady VLM
@@ -18,9 +18,10 @@ import pandas as pd
 import openvsp as vsp
 from plots_2d import make_plots_2d
 from vspaero_config import *
-from prop_utils import set_rpm, set_tangential_curve, find_prop_geom
+from prop_utils import find_prop_geom
 from read_result import parse_results
 from prep_vspaero import run_vspaero
+from thrust_matching import match_radial_thrust_twist
 
 
 def main():
@@ -34,6 +35,9 @@ def main():
     # handle_mesh(geom_id, params=mesh_params)
     vsp.Update()
     rootstart = vsp.GetParmVal(vsp.FindParm(geom_id, "RadiusFrac", "XSec_0"))
+    initial_twist_x = vsp.PCurveGetTVec(geom_id, vsp.PROP_TWIST)
+    initial_twist_y = vsp.PCurveGetValVec(geom_id, vsp.PROP_TWIST)
+    initial_twist_pts = np.column_stack([initial_twist_x, initial_twist_y])
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -79,28 +83,43 @@ def main():
 
             # 1. fresh load every iteration — no state carried over
             vsp.ClearVSPModel()
-            vsp.ReadVSPFile(VSP_FILE)
-            geom_id = find_prop_geom()
-            # handle_mesh(geom_id, params=mesh_params)
+            prop_file_name = f"{OUTPUT_DIR}/{case_id}/{case_id}.vsp3"
+            vsp.ReadVSPFile(prop_file_name)
 
+            # 5. run VSPAERO itteratively — set filename so output files go to case_dir
+            # rid = run_vspaero(omega=OMEGA, R=R, mode=ANALYSIS_MODE, rho=RHO,
+            #                   vref=VREF, mref=MREF, sref=SREF, bref=BREF,
+            #                   cref=CREF, Reref=RE_CREF, nwakenodes=NUM_WAKE_NODES,
+            #                   ncpu=NCPU, wakeiter=WAKE_NUM_ITER, revs=NUM_REVS)
+            vsp_aero_kwargs = dict(
+                omega=OMEGA,
+                R=R,
+                mode=ANALYSIS_MODE,
+                rho=RHO,
+                vref=VREF,
+                mref=MREF,
+                sref=SREF,
+                bref=BREF,
+                cref=CREF,
+                Reref=RE_CREF,
+                nwakenodes=NUM_WAKE_NODES,
+                ncpu=NCPU,
+                wakeiter= WAKE_NUM_ITER,
+                revs= NUM_REVS,
+            )
 
-            # 2. set tangential PCurve
-            set_tangential_curve(geom_id, A_frac, pos)
-
-            # 3. set RPM on unsteady group
-            set_rpm(RPM)
-
-            # 4. save geometry immediately after Update()
-            vsp.SetVSP3FileName(case_vsp)
-            vsp.Update()
-            vsp.WriteVSPFile(case_vsp, vsp.SET_ALL)
-            print(f"    Geometry saved → {case_vsp}")
-
-            # 5. run VSPAERO — set filename so output files go to case_dir
-            rid = run_vspaero(omega=OMEGA, R=R, mode=ANALYSIS_MODE, rho=RHO,
-                              vref=VREF, mref=MREF, sref=SREF, bref=BREF,
-                              cref=CREF, Reref=RE_CREF, nwakenodes=NUM_WAKE_NODES,
-                              ncpu=NCPU, wakeiter=WAKE_NUM_ITER, revs=NUM_REVS)
+            iter_info  = match_radial_thrust_twist(
+                baseline_lod_path="baseline/reverse_eng_TM.lod", # TODO check if baseline is still correct version
+                vsp_source_file= prop_file_name,
+                case_dir=case_dir,
+                case_id=case_id,
+                initial_twist_pts=initial_twist_pts,
+                rpm=RPM,
+                avg_last_n=AVG_LAST_N,
+                gain = .7,
+                max_iter = 7 ,
+                **vsp_aero_kwargs,
+            )
 
             # 6. Build row with metadata
             row = {
@@ -113,13 +132,12 @@ def main():
             }
 
             # parse from output files (more reliable than GetDoubleResults)
-            res = parse_results(case_dir, case_id, avg_last_n=AVG_LAST_N)
+            res_id = f"{case_id}_twist{(iter_info["n_iter"]-1):02d}"
+            res = parse_results(case_dir, res_id, avg_last_n=AVG_LAST_N)
             for k in ("CT_H", "CQ_H", "Thrust_total", "Moment_total", "FOM_total", "CT_h",
                       "CQ_h", "Thrust", "Moment", "FOM"):
                 row[k] = res[k]
 
-            if not rid:
-                print("   ⚠ WARNING: ExecAnalysis returned no rid")
 
             def fmt(v, spec):
                 return format(v, spec) if v is not None else "N/A"
