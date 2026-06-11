@@ -1,6 +1,7 @@
 import os
 import io
 import pandas as pd
+import numpy as np
 
 
 _ROTOR_COLS = ["CT_H", "CQ_H", "FOM", "Thrust", "Moment"]
@@ -117,7 +118,7 @@ def _read_lod_dataframe(lod_file):
     return df
 
 
-def parse_lod(lod_file, avg_last_n=None):
+def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray|int]:
     """Parse radial distributions from a VSPAERO .lod file.
 
     Works for both unsteady (``Time`` column) and pseudo-steady (``Iter``
@@ -138,7 +139,7 @@ def parse_lod(lod_file, avg_last_n=None):
 
 
     """
-    result = dict(r_norm=[], dCT_dR=[], dCQ_dR=[], Thrust=[])
+    result = dict()
     if not os.path.isfile(lod_file):
         return result
 
@@ -155,37 +156,32 @@ def parse_lod(lod_file, avg_last_n=None):
             last_steps = steps[-1:]
         subset = df[df["_step"].isin(last_steps)]
 
-        # For each radial station: sum aerodynamic loads across blades within each
-        # step, average abs(Yavg) to get the physical radial position, then
+        # For each radial station: average aerodynamic loads across blades within each
         # average across steps.
         per_step = (
             subset.groupby(["_step", "roverR"])
             .agg(
-                CT_h=("CT_h", "sum"),
-                CQ_h=("CQ_h", "sum"),
-                Thrust=("Thrust", "sum"),
-                Moment=("Moment", "sum"),
-                FOM=("FOM", "sum"),
-                abs_Yavg=("abs_Yavg", "mean"),
+                CT_h=("CT_h", "mean"),
+                CQ_h=("CQ_h", "mean"),
+                Thrust=("Thrust", "mean"),
+                Moment=("Moment", "mean"),
+                FOM=("FOM", "mean"),
+
             )
             .reset_index()
         )
-        avg = per_step.groupby("roverR").agg(
-            CT_h=("CT_h", "mean"),
-            CQ_h=("CQ_h", "mean"),
-            Thrust=("Thrust", "mean"),
-            Moment=("Moment", "mean"),
-            FOM=("FOM", "mean"),
-            abs_Yavg=("abs_Yavg", "mean"),
-        )
+        blade_geom = df[["Yavg", "Xavg", "Zavg"]][0:len(per_step)] #take geometry from first blade
+        blade_num = df["VortexSheet"].max() # number of blades
 
-        result["r_norm"] = (avg["abs_Yavg"] / bref).tolist()
-        result["r"] = avg["abs_Yavg"].tolist()
-        result["CT_h"] = avg["CT_h"].tolist()
-        result["CQ_h"] = avg["CQ_h"].tolist()
-        result["Thrust"] = avg["Thrust"].tolist()
-        result["Moment"] = avg["Moment"].tolist()
-        result["FOM"] = avg["FOM"].tolist()
+
+        result["r_norm"] = (blade_geom["Yavg"] / bref).to_numpy()
+        result["CT_h"] = per_step["CT_h"].to_numpy()
+        result["CQ_h"] = per_step["CQ_h"].to_numpy()
+        result["Thrust"] = per_step["Thrust"].to_numpy()
+        result["Moment"] = per_step["Moment"].to_numpy()
+        result["FOM"] = per_step["FOM"].to_numpy()
+        result["phase_angle"] = np.degrees(np.atan((-blade_geom["Zavg"]/blade_geom["Yavg"]).to_numpy())) # Y from root_LE to tip_LE x 90 degrees with y in aproximate positive chord direction
+        result["nB"] = blade_num
 
     except Exception as e:
         print(f"    WARNING: could not parse lod file: {e}")
