@@ -4,7 +4,7 @@ noise_analysis.py
 Post-processing script: loads VSPAERO aerodynamic results produced by main.py
 and computes propeller noise using the rotating-dipole model in noise/.
 
-For each sweep case found in OUTPUT_DIR (tangential_sweep_results/): # TODO allow nested dir and pick last itteration
+For each sweep case found in OUTPUT_DIR (tangential_sweep_results/):
   1. Load radial force distribution from .lod files  # TODO update vspaero such that results are stored in scientific notation
   2. Convert Moment → Ftan [N/station] per blade
   3. Run compute_noise_from_distributed_dipole_sources() for each blade
@@ -16,11 +16,9 @@ Force conversion
 ----------------
 Per-blade: Ftan[i] = Moment/(roverR * R)
 
-Sweep-angle reconstruction # TODO allow arbitrary sweep by taking Xavg , Yavg from lod file
+Sweep-angle reconstruction
 --------------------------
-# Matches set_tangential_curve() in geom_utils.py:
-#   tan_offset(rR) = A * sin( pi * (rR - R_ROOT) / (R_TIP - R_ROOT) )
-#   phi_deg(rR)    = arctan2( tan_offset, rR * R )  [deg]
+
 """
 
 import os
