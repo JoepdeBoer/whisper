@@ -62,12 +62,6 @@ NOISE_DIR   = "noise_results_baseline"  # output directory for all noise plots
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _sweep_angle_deg(rR, amplitude_m):
-    """Reconstruct sweep (phi0) angle [deg] at each r/R for a given amplitude."""
-    tan_offset = amplitude_m * np.sin(
-        np.pi * (rR - R_ROOT_FRAC) / (R_TIP_FRAC - R_ROOT_FRAC))
-    r_phys = np.where(rR < 1e-9, 1e-9, rR) * R
-    return np.degrees(np.arctan2(tan_offset, r_phys))
 
 def _nan_zeros(arr):
     out = arr.copy()

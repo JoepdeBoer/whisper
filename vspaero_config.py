@@ -4,7 +4,7 @@ from math import pi
 # SETTINGS
 # ─────────────────────────────────────────────────────────────────────────────
 VSP_FILE       = "baseline/reverse_eng_TM.vsp3"
-OUTPUT_DIR     = "tangential_sweep_Tm"
+OUTPUT_DIR     = "baseline"
 
 # Design exploration settings
 N_STEPS        = 6          # number of amplitude steps and location steps
@@ -14,7 +14,6 @@ AMPLITUDE_FRAC = 0.3      # max amplitude = AMPLITUDE_FRAC * R
 # Propeller geometry
 DIAMETER       = 0.508      # m
 R              = DIAMETER / 2.0
-R_ROOT_FRAC    = 0.2        # r/R at blade root
 R_TIP_FRAC     = 1.0        # r/R at blade tip
 
 # VSPAERO operational settings
