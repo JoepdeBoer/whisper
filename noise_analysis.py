@@ -4,8 +4,8 @@ noise_analysis.py
 Post-processing script: loads VSPAERO aerodynamic results produced by main.py
 and computes propeller noise using the rotating-dipole model in noise/.
 
-For each sweep case found in OUTPUT_DIR (tangential_sweep_results/):
-  1. Load radial force distribution from .lod files
+For each sweep case found in OUTPUT_DIR (tangential_sweep_results/): # TODO allow nested dir and pick last itteration
+  1. Load radial force distribution from .lod files  # TODO update vspaero such that results are stored in scientific notation
   2. Convert Moment → Ftan [N/station] per blade
   3. Run compute_noise_from_distributed_dipole_sources() for each blade
   4. Compute SPL, SPLA spectra; OSWL, OSWLA overall sound-power levels
@@ -16,14 +16,17 @@ Force conversion
 ----------------
 Per-blade: Ftan[i] = Moment/(roverR * R)
 
-Sweep-angle reconstruction
+Sweep-angle reconstruction # TODO allow arbitrary sweep by taking Xavg , Yavg from lod file
 --------------------------
-Matches set_tangential_curve() in geom_utils.py:
-  tan_offset(rR) = A * sin( pi * (rR - R_ROOT) / (R_TIP - R_ROOT) )
-  phi_deg(rR)    = arctan2( tan_offset, rR * R )  [deg]
+# Matches set_tangential_curve() in geom_utils.py:
+#   tan_offset(rR) = A * sin( pi * (rR - R_ROOT) / (R_TIP - R_ROOT) )
+#   phi_deg(rR)    = arctan2( tan_offset, rR * R )  [deg]
 """
 
 import os
+import csv
+from pathlib import Path
+import re
 import numpy as np
 import numpy.typing as npt
 import matplotlib
@@ -33,7 +36,7 @@ from noise import (compute_noise_from_distributed_dipole_sources,
                          compute_a_weighting_factor)
 
 # ── propeller / aerodynamic config ────────────────────────────────────────────
-from vspaero_config import OUTPUT_DIR, R, OMEGA, RHO, R_ROOT_FRAC, R_TIP_FRAC
+from vspaero_config import OUTPUT_DIR, R, OMEGA, RHO, R_ROOT_FRAC, R_TIP_FRAC, AVG_LAST_N
 from read_result import parse_lod
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -46,14 +49,14 @@ RMIC        = 10.0   # microphone distance [m]
 ZETA_DEG    = 0.0    # elevation angle of observers above rotor plane [deg]
 NTHETA      = 91     # number of azimuthal observer angles  (0–360°)
 PMAXINT     = 30     # Dirac-delta series truncation order
-PCT_IMPULSE = 0.05   # impulse load = PCT_IMPULSE * steady load
+PCT_IMPULSE = .05  # impulse load = PCT_IMPULSE * steady load # TODO run with and without impulsive load
 PHI_I_DEG1  = 90.0   # impulse-event azimuth for blade 1 [deg]
-THETA_SPEC  = 45.0   # observer azimuth used for the spectrum subplot [deg]
+THETA_SPEC  = 0   # observer azimuth used for the spectrum subplot [deg]
 
 PREF        = 20e-6  # acoustic reference pressure [Pa]
 PREF_W      = 1e-12  # acoustic reference power    [W]
 
-NOISE_DIR   = "noise_results"  # output directory for all noise plots
+NOISE_DIR   = "noise_results_baseline"  # output directory for all noise plots
 # ═════════════════════════════════════════════════════════════════════════════
 
 
@@ -101,17 +104,44 @@ def _radial_ospl(PR):
     return 10 * np.log10(P2R) - 20 * np.log10(PREF)
 
 
+# def _radial_oswl(PR, area_fac):
+#     """OSWL [dB re 1 pW] per radial station, summed over all observers and harmonics."""
+#     P2R = np.nansum(np.abs(PR)**2, axis=(0, 1))
+#     P2R[P2R == 0] = np.nan
+#     return 10 * np.log10(P2R * area_fac) - 10 * np.log10(PREF_W)
+#
+#
+# def _cumulative_oswl(PR, area_fac):
+#     """Cumulative OSWL [dB re 1 pW] from root outward (incoherent sum over stations)."""
+#     P2R = np.nansum(np.abs(PR)**2, axis=(0, 1))
+#     P2R = np.nan_to_num(P2R, nan=0.0)
+#     cumul = np.cumsum(P2R) * area_fac
+#     cumul[cumul == 0] = np.nan
+#     return 10 * np.log10(cumul / PREF_W)
+
+
+def _relative_phase_deg(P_complex_1d):
+    """Phase at each radial station relative to root, wrapped to [0, 180]."""
+    raw = (np.angle(P_complex_1d) * 180 / np.pi)% 360
+    return [i if i < 180 else i - 180 for i in raw]
+
+
+def _combine_oswla(*vals):
+    """Combine OSWLA values [dBA] logarithmically; ignores NaN/None."""
+    finite = [v for v in vals if v is not None and np.isfinite(v)]
+    if not finite:
+        return np.nan
+    return 10 * np.log10(sum(10 ** (v / 10) for v in finite))
+
+
 # ── core noise routine ────────────────────────────────────────────────────────
 
 def run_noise_for_case(rR: npt.NDArray, thrust: npt.NDArray, moment: npt.NDArray,
-                       amplitude_m: float, label:str, out_dir: str) -> dict:
+                       phi0_base: npt.NDArray, label:str, out_dir: str, plot:bool = True) -> dict:
     """Run full noise analysis for one sweep case and save plots.
-
-    Returns a dict of OSWL/OSWLA scalars for summary plotting.
+       Returns a dict of OSWL/OSWLA scalars for summary plotting.
     """
     nR     = len(rR)
-
-    phi0_base        = _sweep_angle_deg(rR, amplitude_m) # TODO incorporate cartesian location to allow other sweep distributions
     Ftan = moment/(rR*R)
     thrust_i, tangential_i       = PCT_IMPULSE * thrust, PCT_IMPULSE * Ftan
 
@@ -152,20 +182,18 @@ def run_noise_for_case(rR: npt.NDArray, thrust: npt.NDArray, moment: npt.NDArray
         PdihatR += PdihatR1 + PdihatR2
 
     # ── Filter zero entries → NaN ──────────────────────────────────────────
-    Pthat   = _nan_zeros(Pthat)
-    Pdhat   = _nan_zeros(Pdhat)
-    Ptihat  = _nan_zeros(Ptihat)
-    Pdihat  = _nan_zeros(Pdihat)
-    PthatR  = _nan_zeros(PthatR)
-    PdhatR  = _nan_zeros(PdhatR)
-    PtihatR = _nan_zeros(PtihatR)
-    PdihatR = _nan_zeros(PdihatR)
+    # preventing log of zero
+    Pthat_nan   = _nan_zeros(Pthat)
+    Pdhat_nan   = _nan_zeros(Pdhat)
+    Ptihat_nan  = _nan_zeros(Ptihat)
+    Pdihat_nan  = _nan_zeros(Pdihat)
+
 
     # ── SPL ───────────────────────────────────────────────────────────────
-    SPLt  = 20 * np.log10(np.abs(Pthat)  / PREF)
-    SPLd  = 20 * np.log10(np.abs(Pdhat)  / PREF)
-    SPLti = 20 * np.log10(np.abs(Ptihat) / PREF)
-    SPLdi = 20 * np.log10(np.abs(Pdihat) / PREF)
+    SPLt  = 20 * np.log10(np.abs(Pthat_nan)  / PREF)
+    SPLd  = 20 * np.log10(np.abs(Pdhat_nan)  / PREF)
+    SPLti = 20 * np.log10(np.abs(Ptihat_nan) / PREF)
+    SPLdi = 20 * np.log10(np.abs(Pdihat_nan) / PREF)
     for arr in (SPLt, SPLd, SPLti, SPLdi):
         arr[arr <= 0] = np.nan
 
@@ -201,125 +229,161 @@ def run_noise_for_case(rR: npt.NDArray, thrust: npt.NDArray, moment: npt.NDArray
     titles   = ['Steady Thrust', 'Steady Drag', 'Impulse Thrust', 'Impulse Drag']
     theta_rad = thetaDeg * np.pi / 180
     iTheta    = int(np.argmin(np.abs(thetaDeg - THETA_SPEC)))
+    if plot:
+        # ── Figure A: Polar directivity ────────────────────────────────────────
+        fig, axes = plt.subplots(1, 4, subplot_kw={'projection': 'polar'}, figsize=(16, 4))
+        for ax, data, title in zip(axes,
+                                   [_total_spl(Pthat), _total_spl(Pdhat),
+                                    _total_spl(Ptihat), _total_spl(Pdihat)],
+                                   titles):
+            ax.plot(theta_rad, data)
+            ax.set_rlim([30, 110])
+            ax.set_title(title)
+        fig.suptitle(f'Total SPL Polar Directivity — {label}')
+        fig.tight_layout()
+        fig.savefig(os.path.join(out_dir, f"{label}_polar.png"), dpi=120, bbox_inches="tight")
+        plt.close(fig)
 
-    # ── Figure A: Polar directivity ────────────────────────────────────────
-    fig, axes = plt.subplots(1, 4, subplot_kw={'projection': 'polar'}, figsize=(16, 4))
-    for ax, data, title in zip(axes,
-                               [_total_spl(Pthat), _total_spl(Pdhat),
-                                _total_spl(Ptihat), _total_spl(Pdihat)],
-                               titles):
-        ax.plot(theta_rad, data)
-        ax.set_rlim([30, 110])
-        ax.set_title(title)
-    fig.suptitle(f'Total SPL Polar Directivity — {label}')
-    fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, f"{label}_polar.png"), dpi=120, bbox_inches="tight")
-    plt.close(fig)
+        # ── Figure B: SPL / SPLA spectrum at THETA_SPEC ───────────────────────
+        fig, axes = plt.subplots(2, 4, figsize=(16, 7))
+        for col, (title, spl, splA) in enumerate(
+                zip(titles, [SPLt, SPLd, SPLti, SPLdi],
+                            [SPLtA, SPLdA, SPLtiA, SPLdiA])):
+            axes[0, col].stem(vFreq, spl[iTheta],  markerfmt='C0o', linefmt='C0-', basefmt='k-')
+            axes[0, col].set(xlabel='Frequency [Hz]', ylabel='SPL [dB]', title=title,
+                             xlim=[0, max(vFreq)*1.1], ylim=[30, 120])
+            axes[0, col].grid(True)
+            axes[1, col].stem(vFreq, splA[iTheta], markerfmt='C1o', linefmt='C1-', basefmt='k-')
+            axes[1, col].set(xlabel='Frequency [Hz]', ylabel='SPLA [dBA]', title=title,
+                             xlim=[0, max(vFreq)*1.1], ylim=[30, 100])
+            axes[1, col].grid(True)
+        fig.suptitle(f'SPL Spectrum at θ={THETA_SPEC}° — {label}')
+        fig.tight_layout()
+        fig.savefig(os.path.join(out_dir, f"{label}_spectrum.png"), dpi=120, bbox_inches="tight")
+        plt.close(fig)
 
-    # ── Figure B: SPL / SPLA spectrum at THETA_SPEC ───────────────────────
-    fig, axes = plt.subplots(2, 4, figsize=(16, 7))
-    for col, (title, spl, splA) in enumerate(
-            zip(titles, [SPLt, SPLd, SPLti, SPLdi],
-                        [SPLtA, SPLdA, SPLtiA, SPLdiA])):
-        axes[0, col].stem(vFreq, spl[iTheta],  markerfmt='C0o', linefmt='C0-', basefmt='k-')
-        axes[0, col].set(xlabel='Frequency [Hz]', ylabel='SPL [dB]', title=title,
-                         xlim=[0, max(vFreq)*1.1], ylim=[30, 120])
-        axes[0, col].grid(True)
-        axes[1, col].stem(vFreq, splA[iTheta], markerfmt='C1o', linefmt='C1-', basefmt='k-')
-        axes[1, col].set(xlabel='Frequency [Hz]', ylabel='SPLA [dBA]', title=title,
-                         xlim=[0, max(vFreq)*1.1], ylim=[30, 100])
-        axes[1, col].grid(True)
-    fig.suptitle(f'SPL Spectrum at θ={THETA_SPEC}° — {label}')
-    fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, f"{label}_spectrum.png"), dpi=120, bbox_inches="tight")
-    plt.close(fig)
+        # ── Figure C: Radial OSPL and phase ───────────────────────────────────
+        OSPLtR  = _radial_ospl(PthatR)
+        OSPLdR  = _radial_ospl(PdhatR)
+        OSPLtiR = _radial_ospl(PtihatR)
+        OSPLdiR = _radial_ospl(PdihatR)
+        phitR  = _relative_phase_deg(PthatR[iTheta, 0, :])
+        phidR  = _relative_phase_deg(PdhatR[iTheta, 0, :])
+        phitiR = _relative_phase_deg(PtihatR[iTheta, 0, :])
+        phidiR = _relative_phase_deg(PdihatR[iTheta, 0, :])
 
-    # ── Figure C: Radial OSPL and phase ───────────────────────────────────
-    OSPLtR  = _radial_ospl(PthatR)
-    OSPLdR  = _radial_ospl(PdhatR)
-    OSPLtiR = _radial_ospl(PtihatR)
-    OSPLdiR = _radial_ospl(PdihatR)
-    phitR  = np.unwrap(np.angle(PthatR[iTheta, 0, :]))  * 180 / np.pi
-    phidR  = np.unwrap(np.angle(PdhatR[iTheta, 0, :]))  * 180 / np.pi
-    phitiR = np.unwrap(np.angle(PtihatR[iTheta, 0, :])) * 180 / np.pi
-    phidiR = np.unwrap(np.angle(PdihatR[iTheta, 0, :])) * 180 / np.pi
-
-    fig, axes = plt.subplots(2, 4, figsize=(16, 7))
-    for col, (title, ospl, phase) in enumerate(zip(
-            titles,
-            [OSPLtR, OSPLdR, OSPLtiR, OSPLdiR],
-            [phitR,  phidR,  phitiR,  phidiR])):
-        axes[0, col].plot(rR, ospl, '-o', ms=4)
-        axes[0, col].set(xlabel='r/R', ylabel='OSPL [dB]', title=title,
-                         xlim=[0, 1], ylim=[30, 120])
-        axes[0, col].grid(True)
-        axes[1, col].plot(rR, phase, '-o', ms=4)
-        axes[1, col].set(xlabel='r/R', ylabel='Phase [deg]', title=title,
-                         xlim=[0, 1], ylim=[-180, 180])
-        axes[1, col].grid(True)
-    fig.suptitle(f'Radial OSPL and Phase — {label}')
-    fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, f"{label}_radial.png"), dpi=120, bbox_inches="tight")
-    plt.close(fig)
+        fig, axes = plt.subplots(2, 4, figsize=(16, 7))
+        for col, (title, ospl, phase) in enumerate(zip(
+                titles,
+                [OSPLtR, OSPLdR, OSPLtiR, OSPLdiR],
+                [phitR,  phidR,  phitiR,  phidiR])):
+            axes[0, col].plot(rR, ospl, '-o', ms=4)
+            axes[0, col].set(xlabel='r/R', ylabel='OSPL [dB]', title=title,
+                             xlim=[0, 1], ylim=[min(min(OSPLtR),min(OSPLdR)),max(OSPLtiR)*1.1])
+            axes[0, col].grid(True)
+            axes[1, col].plot(rR, phase, '-o', ms=4)
+            axes[1, col].set(xlabel='r/R', ylabel='Phase [deg]', title=title,
+                             xlim=[0, 1], ylim=[-10, 180])
+            axes[1, col].grid(True)
+        fig.suptitle(f'Radial OSPL and Phase — {label}  |  Observer: θ={thetaDeg[iTheta]:.0f}°, ζ={ZETA_DEG:.0f}°')
+        fig.tight_layout()
+        fig.savefig(os.path.join(out_dir, f"{label}_radial.png"), dpi=120, bbox_inches="tight")
+        plt.close(fig)
 
     return dict(
-        label=label, amplitude_m=amplitude_m,
+        label=label,
         OSWLt=OSWLt,  OSWLd=OSWLd,  OSWLti=OSWLti,  OSWLdi=OSWLdi,
         OSWLtA=OSWLtA, OSWLdA=OSWLdA, OSWLtiA=OSWLtiA, OSWLdiA=OSWLdiA,
+        OSWLA_total=_combine_oswla(OSWLtA, OSWLdA, OSWLtiA, OSWLdiA),
     )
+
 
 
 # ── case discovery ────────────────────────────────────────────────────────────
 
-def _find_cases(results_dir):
-    """Yield (label, amplitude_m, lod_path) for every case with a .lod file."""
+# def _find_cases(results_dir):
+#     """Yield (label, amplitude_m, lod_path) for every case with a .lod file."""
+#     if not os.path.isdir(results_dir):
+#         return
+#     for entry in sorted(os.scandir(results_dir), key=lambda e: e.name):
+#         if not entry.is_dir():
+#             continue
+#         lod_path = os.path.join(entry.path, f"{entry.name}.lod")
+#         if not os.path.isfile(lod_path):
+#             continue
+#         # Parse amplitude from directory name: "A00_amp0mm" → 0.0 m
+#         parts = entry.name.split("_amp")
+#         try:
+#             amp_m = float(parts[1].rstrip("mm")) / 1000.0 if len(parts) == 2 else 0.0
+#         except ValueError:
+#             amp_m = 0.0
+#         yield entry.name, amp_m, lod_path
+
+
+
+
+def _find_lod_files(results_dir):
+    """
+    Recursively find .lod files. In any directory, if multiple .lod files
+    share the same base name (differing only by a numeric suffix), only the
+    one with the highest numeric suffix is kept.
+
+    Yields: (lod_path,) for each kept .lod file.
+    """
     if not os.path.isdir(results_dir):
-        return
-    for entry in sorted(os.scandir(results_dir), key=lambda e: e.name):
-        if not entry.is_dir():
+        raise FileNotFoundError(f"Directory {results_dir} not found from working dir {Path.cwd()}")
+
+    for root, dirs, files in os.walk(results_dir):
+        dirs.sort()  # consistent ordering
+
+        lod_files = sorted(f for f in files if f.endswith(".lod"))
+        if not lod_files:
             continue
-        lod_path = os.path.join(entry.path, f"{entry.name}.lod")
-        if not os.path.isfile(lod_path):
-            continue
-        # Parse amplitude from directory name: "A00_amp0mm" → 0.0 m
-        parts = entry.name.split("_amp")
-        try:
-            amp_m = float(parts[1].rstrip("mm")) / 1000.0 if len(parts) == 2 else 0.0
-        except ValueError:
-            amp_m = 0.0
-        yield entry.name, amp_m, lod_path
+
+        # Group files that share the same prefix, differing only by trailing number
+        # e.g. "caseA02.lod" and "caseA03.lod" -> prefix "caseA", numbers 02, 03
+        groups = {}  # prefix -> list of (number_str, filename)
+        standalone = []
+
+        for fname in lod_files:
+            stem = fname[:-4]  # strip .lod
+            match = re.match(r"^(.*?)(\d+)$", stem)
+            if match:
+                prefix, num = match.group(1), match.group(2)
+                groups.setdefault(prefix, []).append((num, fname))
+            else:
+                standalone.append(fname)
+
+        # From each group, keep only the file with the highest numeric suffix
+        for prefix, candidates in groups.items():
+            _, best_fname = max(candidates, key=lambda x: int(x[0]))
+            yield os.path.join(root, best_fname)
+
+        for fname in standalone:
+            yield os.path.join(root, fname)
+
 
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
     os.makedirs(NOISE_DIR, exist_ok=True)
-    cases = list(_find_cases(OUTPUT_DIR))
-
-    if not cases:
-        print(f"No cases with radial_distribution.csv found in '{OUTPUT_DIR}/'.")
-        return
-
-    print(f"Found {len(cases)} case(s).  Saving noise plots to '{NOISE_DIR}/'.\n")
+   
     summary = []
-
-    for label, amp_m, lod_path in cases:
-        print(f"[{label}]  amplitude = {amp_m*1000:.1f} mm")
-        # Read last iteration only (pseudo-steady converged result)
-        res = parse_lod(lod_path, avg_last_n=1)
-        if not res["r_norm"]:
-            print(f"  WARNING: no radial data in {lod_path}, skipping.")
-            continue
-        rR     = np.array(res["r_norm"]) #TODO last node sometimes exceeding 1.0 bug?
+    # OUTPUT_DIR = Path(__file__).parent/ "baseline"
+    for lod_path in _find_lod_files(OUTPUT_DIR):
+        res = parse_lod(lod_path, avg_last_n=AVG_LAST_N)
+        rR     = np.array(res["r_norm"])
         thrust = np.array(res["Thrust"])
         moment = np.array(res["Moment"])
-
+        phase = np.array(res["phase_angle"])
+        name = Path(lod_path).stem
         row = run_noise_for_case(
             rR          = rR,
             thrust      = thrust,
+            phi0_base = phase,
             moment     = moment,
-            amplitude_m = amp_m,
-            label       = label,
+            label       = name, # TODO not full path but file prefix only
             out_dir     = NOISE_DIR,
         )
         summary.append(row)
@@ -348,6 +412,27 @@ def main():
         fig.savefig(path, dpi=120, bbox_inches="tight")
         plt.close(fig)
         print(f"Comparison plot → {path}")
+
+    # ── Summary CSV ───────────────────────────────────────────────────────────
+    if summary:
+        csv_path = os.path.join(NOISE_DIR, "noise_summary.csv")
+        fieldnames = ["rank", "label", "OSWLA_total",
+                      "OSWLtA", "OSWLdA", "OSWLtiA", "OSWLdiA",
+                      "OSWLt",  "OSWLd",  "OSWLti",  "OSWLdi"]
+        sorted_rows = sorted(summary,
+                             key=lambda r: r.get("OSWLA_total") or float("inf"),
+                             reverse=True)
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for rank, row in enumerate(sorted_rows, start=1):
+                writer.writerow({
+                    "rank": rank,
+                    **{k: (f"{row[k]:.2f}" if isinstance(row.get(k), float)
+                           and np.isfinite(row[k]) else row.get(k, ""))
+                       for k in fieldnames if k != "rank"},
+                })
+        print(f"Summary CSV (loudest → quietest) → {csv_path}")
 
     print(f"\nDone. All noise results in '{NOISE_DIR}/'.")
 

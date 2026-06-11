@@ -117,7 +117,7 @@ def main():
                 rpm=RPM,
                 avg_last_n=AVG_LAST_N,
                 gain = .7,
-                max_iter = 7 ,
+                max_iter = 10 ,
                 **vsp_aero_kwargs,
             )
 
