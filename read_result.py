@@ -2,7 +2,7 @@ import os
 import io
 import pandas as pd
 import numpy as np
-
+from pathlib import Path
 
 _ROTOR_COLS = ["CT_H", "CQ_H", "FOM", "Thrust", "Moment"]
 
@@ -141,7 +141,7 @@ def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray|int]:
     """
     result = dict()
     if not os.path.isfile(lod_file):
-        return result
+        raise FileNotFoundError(f"lod_file {lod_file} not found from {Path.cwd()}")
 
     try:
         df = _read_lod_dataframe(lod_file)
@@ -181,6 +181,7 @@ def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray|int]:
         result["Moment"] = per_step["Moment"].to_numpy()
         result["FOM"] = per_step["FOM"].to_numpy()
         result["phase_angle"] = np.degrees(np.atan((-blade_geom["Zavg"]/blade_geom["Yavg"]).to_numpy())) # Y from root_LE to tip_LE x 90 degrees with y in aproximate positive chord direction
+        result["polar_r"] = np.sqrt(blade_geom["Yavg"].to_numpy()**2 + blade_geom["Xavg"].to_numpy()**2)/bref
         result["nB"] = blade_num
 
     except Exception as e:

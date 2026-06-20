@@ -28,13 +28,13 @@ import re
 import numpy as np
 import numpy.typing as npt
 import matplotlib
-matplotlib.use("Agg")
+# matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from noise import (compute_noise_from_distributed_dipole_sources,
                          compute_a_weighting_factor)
 
 # ── propeller / aerodynamic config ────────────────────────────────────────────
-from vspaero_config import OUTPUT_DIR, R, OMEGA, RHO, R_ROOT_FRAC, R_TIP_FRAC, AVG_LAST_N
+from vspaero_config import OUTPUT_DIR, R, OMEGA, RHO, AVG_LAST_N
 from read_result import parse_lod
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -44,12 +44,12 @@ N_BLADES    = 2      # number of blades (blades are evenly spaced in azimuth)
 CO          = 340.0  # speed of sound [m/s]
 NM          = 10     # number of harmonics to compute
 RMIC        = 10.0   # microphone distance [m]
-ZETA_DEG    = 0.0    # elevation angle of observers above rotor plane [deg]
+ZETA_DEG    = -30.0    # elevation angle of observers above rotor plane [deg]
 NTHETA      = 91     # number of azimuthal observer angles  (0–360°)
 PMAXINT     = 30     # Dirac-delta series truncation order
 PCT_IMPULSE = .05  # impulse load = PCT_IMPULSE * steady load # TODO run with and without impulsive load
 PHI_I_DEG1  = 90.0   # impulse-event azimuth for blade 1 [deg]
-THETA_SPEC  = 0   # observer azimuth used for the spectrum subplot [deg]
+THETA_SPEC  = 45   # observer azimuth used for the spectrum subplot [deg]
 
 PREF        = 20e-6  # acoustic reference pressure [Pa]
 PREF_W      = 1e-12  # acoustic reference power    [W]
@@ -113,7 +113,7 @@ def _radial_ospl(PR):
 
 
 def _relative_phase_deg(P_complex_1d):
-    """Phase at each radial station relative to root, wrapped to [0, 180]."""
+    """Phase at each radial station wrapped to [0, 180]."""
     raw = (np.angle(P_complex_1d) * 180 / np.pi)% 360
     return [i if i < 180 else i - 180 for i in raw]
 
@@ -134,7 +134,7 @@ def run_noise_for_case(rR: npt.NDArray, thrust: npt.NDArray, moment: npt.NDArray
        Returns a dict of OSWL/OSWLA scalars for summary plotting.
     """
     nR     = len(rR)
-    Ftan = moment/(rR*R)
+    Ftan = moment/(rR*R) #TODO use CX,CY and CZ for forces in 3 directions
     thrust_i, tangential_i       = PCT_IMPULSE * thrust, PCT_IMPULSE * Ftan
 
     vm       = np.arange(1, NM + 1)

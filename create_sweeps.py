@@ -3,7 +3,7 @@ Propeller Tangential Curve Sweep — Geometry + VSPAERO  VLM
 ==================================================================
 For each amplitude step:
   1. Load base geometry
-  2. Set tangential PCurve (index 8) to a half-sine shape
+  2. Set tangential PCurve (index 8)
   3. Save modified .vsp3
   4. Set RPM on unsteady group 0
 """
@@ -21,7 +21,7 @@ from prop_utils import set_rpm, set_tangential_curve, find_prop_geom
 
 
 
-def main():
+def main(baseline_file, output_dir):
     if not os.path.isfile(VSP_FILE):
         sys.exit(f"ERROR: '{VSP_FILE}' not found.\n"
                  f"Run from your Design_code folder.")
@@ -74,19 +74,12 @@ def main():
 
 
             # 1. fresh load every iteration — no state carried over
-            print("    Clearing...", flush=True)
             vsp.ClearVSPModel()
-            print("    Reading...", flush=True)
             vsp.ReadVSPFile(VSP_FILE)
-            print("    Finding geom...", flush=True)
             geom_id = find_prop_geom()
             set_tangential_curve(geom_id, A_frac, pos)
-            print("    Tangential curve set", flush=True)
-
             # 3. set RPM on unsteady group
             set_rpm(RPM)
-            print("    RPM set", flush=True)
-
             # 4. save geometry immediately after Update()
             vsp.SetVSP3FileName(case_vsp)
             vsp.Update()
