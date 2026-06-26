@@ -166,22 +166,29 @@ def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray|int]:
                 Thrust=("Thrust", "mean"),
                 Moment=("Moment", "mean"),
                 FOM=("FOM", "mean"),
-
+                Cx = ("Cx", "mean"),
+                Cy = ("Cy", "mean"),
+                Cz = ("Cz", "mean"),
             )
             .reset_index()
         )
-        blade_geom = df[["Yavg", "Xavg", "Zavg"]][0:len(per_step)] #take geometry from first blade
+        per_blade = df[["Yavg", "Xavg", "Zavg", "Cy", "Cz", "dSpan", "Chord" ]][0:len(per_step)] #take geometry from first blade
         blade_num = df["VortexSheet"].max() # number of blades
 
 
-        result["r_norm"] = (blade_geom["Yavg"] / bref).to_numpy()
+        result["r_norm"] = (per_blade["Yavg"] / bref).to_numpy()
         result["CT_h"] = per_step["CT_h"].to_numpy()
         result["CQ_h"] = per_step["CQ_h"].to_numpy()
         result["Thrust"] = per_step["Thrust"].to_numpy()
         result["Moment"] = per_step["Moment"].to_numpy()
         result["FOM"] = per_step["FOM"].to_numpy()
-        result["phase_angle"] = np.degrees(np.atan((-blade_geom["Zavg"]/blade_geom["Yavg"]).to_numpy())) # Y from root_LE to tip_LE x 90 degrees with y in aproximate positive chord direction
-        result["polar_r"] = np.sqrt(blade_geom["Yavg"].to_numpy()**2 + blade_geom["Xavg"].to_numpy()**2)/bref
+        result["phase_angle"] = np.degrees(np.atan((-per_blade["Zavg"]/per_blade["Yavg"]).to_numpy())) # Y from root_LE to tip_LE x 90 degrees with y in aproximate positive chord direction
+        result["polar_r"] = np.sqrt(per_blade["Yavg"].to_numpy()**2 + per_blade["Xavg"].to_numpy()**2)/bref
+        result["Cx"] = per_step["Cx"].to_numpy()
+        result["Cy"] = per_blade["Cy"].to_numpy()
+        result["Cz"] = per_blade["Cz"].to_numpy()
+        result["dSpan"] = per_blade["dSpan"].to_numpy()
+        result["Chord"] = per_blade["Chord"].to_numpy()
         result["nB"] = blade_num
 
     except Exception as e:

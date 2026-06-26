@@ -68,6 +68,42 @@ def steady_drag_noise_rotating_dipole_fd(Fd, m, Omega, B, Rmic, phio, theta, zet
     Pdhat = R1 * R2 * R3 * R4 * R5 * Fd
     return Pdhat
 
+# def steady_side_noise_rotating_dipole_fd(Fy, m, Omega, B, Rmic, phio, theta, zeta, Ma, co):
+#     #TODO check by Derriving from Hanson 1980 eq 28
+#     """
+#     Frequency-domain acoustic pressure amplitude based on steady side force (Fy) of a rotating dipole.
+#     Fy is the in-plane force perpendicular to drag (Fz), coupling via the radial direction.
+#
+#     Parameters
+#     ----------
+#     Fy    : float - Steady side force [N]
+#     m     : int   - Harmonic number
+#     Omega : float - Rotational speed [rad/s]
+#     B     : int   - Number of blades
+#     Rmic  : float - Microphone distance [m]
+#     phio  : float - Initial propeller angle [rad]
+#     theta : float - Observer azimuthal angle [rad]
+#     zeta  : float - Elevation angle [rad]
+#     Ma    : float - Mach number at blade section
+#     co    : float - Speed of sound [m/s]
+#
+#     Returns
+#     -------
+#     Pyhat : complex - Acoustic pressure amplitude
+#     """
+#     R1 = -1j * Omega * B**2 * np.exp(-1j * m * B * Omega * Rmic / co) / (4 * np.pi * Rmic * co)
+#     R2 = np.exp(-1j * m * B * phio)
+#     R3 = np.exp(-1j * m * B * (zeta - np.pi / 2))
+#
+#     # Bessel function derivative via recurrence: J'_n(x) = 0.5*(J_{n-1}(x) - J_{n+1}(x))
+#     mB   = m * B
+#     arg  = mB * Ma * np.sin(theta)
+#     dJv  = 0.5 * (jv(mB - 1, arg) - jv(mB + 1, arg))
+#
+#     R5 = np.sin(theta) * dJv   # replaces the plain Jv(mB, arg) * directivity factor
+#
+#     Pyhat = R1 * R2 * R3 * R5 * Fy
+#     return Pyhat
 
 def dirac_delta_thrust_noise_rotating_dipole_fd(Fti, m, Omega, B, Rmic, phio, theta, zeta, phii, Ma, co, pmaxint):
     """

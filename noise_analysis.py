@@ -128,14 +128,13 @@ def _combine_oswla(*vals):
 
 # ── core noise routine ────────────────────────────────────────────────────────
 
-def run_noise_for_case(rR: npt.NDArray, thrust: npt.NDArray, moment: npt.NDArray,
+def run_noise_for_case(rR: npt.NDArray, Fx: npt.NDArray, Fy: npt.NDArray, Fz: npt.NDArray,
                        phi0_base: npt.NDArray, label:str, out_dir: str, plot:bool = True) -> dict:
     """Run full noise analysis for one sweep case and save plots.
        Returns a dict of OSWL/OSWLA scalars for summary plotting.
     """
     nR     = len(rR)
-    Ftan = moment/(rR*R) #TODO use CX,CY and CZ for forces in 3 directions
-    thrust_i, tangential_i       = PCT_IMPULSE * thrust, PCT_IMPULSE * Ftan
+    thrust_i, tangential_i       = PCT_IMPULSE * Fx, PCT_IMPULSE * Fz
 
     vm       = np.arange(1, NM + 1)
     thetaDeg = np.linspace(0, 360, NTHETA)
@@ -155,12 +154,12 @@ def run_noise_for_case(rR: npt.NDArray, thrust: npt.NDArray, moment: npt.NDArray
 
         # Two impulse events per blade (180° apart within one revolution)
         res1 = compute_noise_from_distributed_dipole_sources(
-            R, 1, OMEGA, rR, phi0DegR, thrust, Ftan, thrust_i, tangential_i,
+            R, 1, OMEGA, rR, phi0DegR, Fx, Fz, thrust_i, tangential_i,
             CO, vm, ZETA_DEG, thetaDeg, phiI1, PMAXINT, RMIC)
         _, _, Ptihat1, Pdihat1, _, _, PtihatR1, PdihatR1 = res1
 
         res2 = compute_noise_from_distributed_dipole_sources(
-            R, 1, OMEGA, rR, phi0DegR, thrust, Ftan, thrust_i, tangential_i,
+            R, 1, OMEGA, rR, phi0DegR, Fx, Fz, thrust_i, tangential_i,
             CO, vm, ZETA_DEG, thetaDeg, phiI2, PMAXINT, RMIC)
         PtB, PdB, Ptihat2, Pdihat2, PtRB, PdRB, PtihatR2, PdihatR2 = res2
 
