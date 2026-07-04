@@ -365,15 +365,14 @@ def main():
     for lod_path in _find_lod_files(OUTPUT_DIR):
         res = parse_lod(lod_path, avg_last_n=AVG_LAST_N)
         rR     = np.array(res["r_norm"])
-        thrust = np.array(res["Thrust"])
-        moment = np.array(res["Moment"])
         phase = np.array(res["phase_angle"])
         name = Path(lod_path).stem
         row = run_noise_for_case(
             rR          = rR,
-            thrust      = thrust,
+            Fx      = res["Fx"],
             phi0_base = phase,
-            moment     = moment,
+            Fy = res["Fy"],
+            Fz = res["Fz"],
             label       = name, # TODO not full path but file prefix only
             out_dir     = NOISE_DIR,
         )

@@ -71,6 +71,16 @@ def _read_bref(lod_file):
             if stripped.startswith("Bref_"):
                 return float(stripped.split()[1])
     raise ValueError(f"Bref_ not found in {lod_file}")
+#______claude__start
+def _read_ref_value(lod_file, key):
+    """Read a scalar reference value (e.g. 'Rho_', 'Bref_') from the .lod header block."""
+    with open(lod_file) as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped.startswith(key):
+                parts = stripped.split()
+                return float(parts[1])
+    raise ValueError(f"Could not find '{key}' in header of {lod_file}")
 
 
 def _read_lod_dataframe(lod_file):
@@ -113,12 +123,14 @@ def _read_lod_dataframe(lod_file):
 
     df["_step"] = pd.to_numeric(df[step_col], errors="coerce")
 
-    for col in ("roverR", "CT_h", "CQ_h", "dSpan", "Diameter", "VortexSheet", "Yavg"):
+    for col in ("roverR", "CT_h", "CQ_h", "dSpan", "Diameter", "VortexSheet",
+                "Yavg", "RPM", "Xavg", "Zavg", "Cx", "Cy", "Cz",
+                "Thrust", "Moment", "FOM", "Chord", "V/Vref" ):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
 
-def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray|int]:
+def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray | int]:
     """Parse radial distributions from a VSPAERO .lod file.
 
     Works for both unsteady (``Time`` column) and pseudo-steady (``Iter``
@@ -136,8 +148,6 @@ def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray|int]:
     -------
     dict with keys: r_norm, "CT_h", "CQ_h", "Thrust", "Moment", "FOM"  (lists, one entry per radial
     station, summed across all blades).
-
-
     """
     result = dict()
     if not os.path.isfile(lod_file):
@@ -145,7 +155,7 @@ def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray|int]:
 
     try:
         df = _read_lod_dataframe(lod_file)
-        bref = _read_bref(lod_file)
+        bref = _read_ref_value(lod_file, "Bref_")
         df["abs_Yavg"] = df["Yavg"].abs()
 
         # Select timesteps / iterations to average over
@@ -166,14 +176,12 @@ def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray|int]:
                 Thrust=("Thrust", "mean"),
                 Moment=("Moment", "mean"),
                 FOM=("FOM", "mean"),
-                Cx = ("Cx", "mean"),
-                Cy = ("Cy", "mean"),
-                Cz = ("Cz", "mean"),
+                Cx=("Cx", "mean"),
             )
             .reset_index()
         )
-        per_blade = df[["Yavg", "Xavg", "Zavg", "Cy", "Cz", "dSpan", "Chord" ]][0:len(per_step)] #take geometry from first blade
-        blade_num = df["VortexSheet"].max() # number of blades
+        per_blade = df[["Yavg", "Xavg", "Zavg", "dSpan", "Chord","Cy","Cz", "V/Vref"]][0:len(per_step)]  # take geometry from first blade
+        blade_num = df["VortexSheet"].max()  # number of blades
 
 
         result["r_norm"] = (per_blade["Yavg"] / bref).to_numpy()
@@ -182,18 +190,119 @@ def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray|int]:
         result["Thrust"] = per_step["Thrust"].to_numpy()
         result["Moment"] = per_step["Moment"].to_numpy()
         result["FOM"] = per_step["FOM"].to_numpy()
-        result["phase_angle"] = np.degrees(np.atan((-per_blade["Zavg"]/per_blade["Yavg"]).to_numpy())) # Y from root_LE to tip_LE x 90 degrees with y in aproximate positive chord direction
-        result["polar_r"] = np.sqrt(per_blade["Yavg"].to_numpy()**2 + per_blade["Xavg"].to_numpy()**2)/bref
+        result["phase_angle"] = np.degrees(np.arctan((-per_blade["Zavg"] / per_blade["Yavg"]).to_numpy()))
+        result["polar_r"] = np.sqrt(per_blade["Yavg"].to_numpy()**2 + per_blade["Xavg"].to_numpy()**2) / bref
         result["Cx"] = per_step["Cx"].to_numpy()
         result["Cy"] = per_blade["Cy"].to_numpy()
         result["Cz"] = per_blade["Cz"].to_numpy()
+        result["V/Vref"] = per_blade["V/Vref"].to_numpy()
+
         result["dSpan"] = per_blade["dSpan"].to_numpy()
         result["Chord"] = per_blade["Chord"].to_numpy()
         result["nB"] = blade_num
 
+
+        # Extract forces
+        result["rho"] = _read_ref_value(lod_file, "Rho_")         # freestream/reference density from header
+        result["rpm"] = subset["RPM"].iloc[-1]                        # constant per case
+        vref =  bref * result["rpm"] / 60 * 2 * np.pi                 # rotor tip speed
+        q = 0.5 * result["rho"] *vref**2                            # dynamic pressure at tip
+
+        result["Fx"] = per_step["Cx"].to_numpy() * q * result["dSpan"] * result["Chord"]
+        result["Fy"] = per_blade["Cy"].to_numpy() * q * result["dSpan"] * result["Chord"]
+        result["Fz"] = per_blade["Cz"].to_numpy() * q * result["dSpan"] * result["Chord"]
+
+
+
     except Exception as e:
         print(f"    WARNING: could not parse lod file: {e}")
     return result
+#______claude__end
+
+# def parse_lod(lod_file, avg_last_n=None) -> dict[str, np.ndarray|int]:
+#     """Parse radial distributions from a VSPAERO .lod file.
+#
+#     Works for both unsteady (``Time`` column) and pseudo-steady (``Iter``
+#     column) output.
+#
+#     Warning! : r_norm(r/R) uses the Bref in the lod file to compute r/R
+#
+#     Parameters
+#     ----------
+#     avg_last_n : int or None
+#         - None or 1 : use the last timestep/iteration only (pseudo-steady).
+#         - > 1       : average over the last *n* timesteps (unsteady).
+#
+#     Returns
+#     -------
+#     dict with keys: r_norm, "CT_h", "CQ_h", "Thrust", "Moment", "FOM"  (lists, one entry per radial
+#     station, summed across all blades).
+#
+#
+#     """
+#     result = dict()
+#     if not os.path.isfile(lod_file):
+#         raise FileNotFoundError(f"lod_file {lod_file} not found from {Path.cwd()}")
+#
+#     try:
+#         df = _read_lod_dataframe(lod_file)
+#         bref = _read_bref(lod_file)
+#         df["abs_Yavg"] = df["Yavg"].abs()
+#
+#         # Select timesteps / iterations to average over
+#         steps = df["_step"].unique()
+#         if avg_last_n is not None and avg_last_n > 1:
+#             last_steps = steps[-avg_last_n:]
+#         else:
+#             last_steps = steps[-1:]
+#         subset = df[df["_step"].isin(last_steps)]
+#
+#         # For each radial station: average aerodynamic loads across blades within each
+#         # average across steps.
+#         per_step = (
+#             subset.groupby(["_step", "roverR"])
+#             .agg(
+#                 CT_h=("CT_h", "mean"),
+#                 CQ_h=("CQ_h", "mean"),
+#                 Thrust=("Thrust", "mean"),
+#                 Moment=("Moment", "mean"),
+#                 FOM=("FOM", "mean"),
+#                 Cx = ("Cx", "mean"),
+#                 Cy = ("Cy", "mean"),
+#                 Cz = ("Cz", "mean"),
+#             )
+#             .reset_index()
+#         )
+#         per_blade = df[["Yavg", "Xavg", "Zavg", "Cy", "Cz", "dSpan", "Chord" ]][0:len(per_step)] #take geometry from first blade
+#         blade_num = df["VortexSheet"].max() # number of blades
+#
+#         # Extract forces
+#         rho = ...
+#         rpm = ...
+#         diameter = ...
+#         vref = diameter/2 * rpm/60 * 2 * np.pi
+#         Fx = per_step["Cx"].to_numpy() * .5 * 1.225 * rho * vref**2
+#
+#
+#
+#         result["r_norm"] = (per_blade["Yavg"] / bref).to_numpy()
+#         result["CT_h"] = per_step["CT_h"].to_numpy()
+#         result["CQ_h"] = per_step["CQ_h"].to_numpy()
+#         result["Thrust"] = per_step["Thrust"].to_numpy()
+#         result["Moment"] = per_step["Moment"].to_numpy()
+#         result["FOM"] = per_step["FOM"].to_numpy()
+#         result["phase_angle"] = np.degrees(np.atan((-per_blade["Zavg"]/per_blade["Yavg"]).to_numpy())) # Y from root_LE to tip_LE x 90 degrees with y in aproximate positive chord direction
+#         result["polar_r"] = np.sqrt(per_blade["Yavg"].to_numpy()**2 + per_blade["Xavg"].to_numpy()**2)/bref
+#         result["Cx"] = per_step["Cx"].to_numpy()
+#         result["Cy"] = per_blade["Cy"].to_numpy()
+#         result["Cz"] = per_blade["Cz"].to_numpy()
+#         result["dSpan"] = per_blade["dSpan"].to_numpy()
+#         result["Chord"] = per_blade["Chord"].to_numpy()
+#         result["nB"] = blade_num
+#
+#     except Exception as e:
+#         print(f"    WARNING: could not parse lod file: {e}")
+#     return result
 
 
 def parse_results(case_dir, case_name, avg_last_n=None):
