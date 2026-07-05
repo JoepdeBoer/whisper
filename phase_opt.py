@@ -10,40 +10,40 @@ from noise_analysis import run_noise_for_case
 from read_result import parse_lod
 from vspaero_config import AVG_LAST_N
 
-MAX_SWEEP = 1 # radians
-OUT_PUT_DIR = Path("noise_k_sweep_jun19_2")
-AVG_LAST_N = None
+MAX_SWEEP = .75 # radians
+OUT_PUT_DIR = Path("noise_k_sweep_jul4_75")
 LOD_PATH = Path("baseline/reverse_eng_TM.lod")
-
-
 
 
 def phi(r, k):
     return -(r**k)*MAX_SWEEP + MAX_SWEEP
 
-
-ksearch = np.linspace(1.5, 2.7, 10, endpoint=True)
+ksearch = np.linspace(1.58, 1.63, 5, endpoint=True)
 
 def main():
+    Path.mkdir(OUT_PUT_DIR, exist_ok=True)
     summary = []
-    # OUTPUT_DIR = Path(__file__).parent/ "baseline"
 
     res = parse_lod(LOD_PATH, avg_last_n=AVG_LAST_N)
     r = np.array(res["polar_r"]) # radius along the x axis
-    thrust = np.array(res["Thrust"])
-    moment = np.array(res["Moment"])
+    Fx = np.array(res["Fx"])
+    Fy = np.array(res["Fy"])
+    Fz = np.array(res["Fz"])
+
     for i, k in enumerate(ksearch):
         phase = phi(r, k)
-        if k >1.5 and k<1.8:
-            plt.polar(phase,r)
-            plt.show()
+        # if k >1.5 and k<1.8:
+        #     plt.polar(phase,r)
+        #     plt.show()
 
         name = f"noise_{MAX_SWEEP:.2f}_k{k:.3f}"
         row = run_noise_for_case(
+            B =2,
             rR=r,
-            thrust=thrust,
+            Fx=Fx,
             phi0_base=np.degrees(phase),
-            moment=moment,
+            Fz=Fz,
+            Fy=Fy, # TODO not implemented
             label=name,  # TODO not full path but file prefix only
             out_dir=OUT_PUT_DIR,
         )
@@ -116,7 +116,7 @@ def main():
     print(f"\nDone. All noise results in '{OUT_PUT_DIR}/'.")
 
 
-def create_vsp3(baseline, k, max_sweep, name) -> None:
+# def create_vsp3(baseline, k, max_sweep, name) -> None:
 
 
 

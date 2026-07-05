@@ -128,10 +128,11 @@ def _combine_oswla(*vals):
 
 # ── core noise routine ────────────────────────────────────────────────────────
 
-def run_noise_for_case(rR: npt.NDArray, Fx: npt.NDArray, Fy: npt.NDArray, Fz: npt.NDArray,
+def run_noise_for_case(B, rR: npt.NDArray, Fx: npt.NDArray, Fy: npt.NDArray, Fz: npt.NDArray,
                        phi0_base: npt.NDArray, label:str, out_dir: str, plot:bool = True) -> dict:
     """Run full noise analysis for one sweep case and save plots.
        Returns a dict of OSWL/OSWLA scalars for summary plotting.
+       noise due to radial forces Fy is not Implemented
     """
     nR     = len(rR)
     thrust_i, tangential_i       = PCT_IMPULSE * Fx, PCT_IMPULSE * Fz
@@ -149,28 +150,21 @@ def run_noise_for_case(rR: npt.NDArray, Fx: npt.NDArray, Fy: npt.NDArray, Fz: np
 
     for iB, phi_B in enumerate(vphiB):
         phi0DegR = phi_B + phi0_base
-        phiI1    = PHI_I_DEG1 + phi_B
-        phiI2    = PHI_I_DEG1 + 180.0 + phi_B
+        phiI    = np.array([PHI_I_DEG1 ,PHI_I_DEG1 + phi_B]) # check
 
-        # Two impulse events per blade (180° apart within one revolution)
-        res1 = compute_noise_from_distributed_dipole_sources(
-            R, 1, OMEGA, rR, phi0DegR, Fx, Fz, thrust_i, tangential_i,
-            CO, vm, ZETA_DEG, thetaDeg, phiI1, PMAXINT, RMIC)
-        _, _, Ptihat1, Pdihat1, _, _, PtihatR1, PdihatR1 = res1
-
-        res2 = compute_noise_from_distributed_dipole_sources(
-            R, 1, OMEGA, rR, phi0DegR, Fx, Fz, thrust_i, tangential_i,
-            CO, vm, ZETA_DEG, thetaDeg, phiI2, PMAXINT, RMIC)
-        PtB, PdB, Ptihat2, Pdihat2, PtRB, PdRB, PtihatR2, PdihatR2 = res2
+        PtB, PdB, Ptihat, Pdihat, PtRB, PdRB, PtihatR, PdihatR = compute_noise_from_distributed_dipole_sources(
+            R, B, OMEGA, rR, phi0DegR, Fx, Fz, thrust_i, tangential_i,
+            CO, vm, ZETA_DEG, thetaDeg, phiI, PMAXINT, RMIC)
 
         Pthat   += PtB
         Pdhat   += PdB
         PthatR  += PtRB
         PdhatR  += PdRB
-        Ptihat  += Ptihat1 + Ptihat2
-        Pdihat  += Pdihat1 + Pdihat2
-        PtihatR += PtihatR1 + PtihatR2
-        PdihatR += PdihatR1 + PdihatR2
+        Ptihat  += Ptihat
+        Pdihat  += Pdihat
+        PtihatR += PtihatR
+        PdihatR += PdihatR
+
 
     # ── Filter zero entries → NaN ──────────────────────────────────────────
     # preventing log of zero
@@ -368,6 +362,7 @@ def main():
         phase = np.array(res["phase_angle"])
         name = Path(lod_path).stem
         row = run_noise_for_case(
+            B = 2,
             rR          = rR,
             Fx      = res["Fx"],
             phi0_base = phase,

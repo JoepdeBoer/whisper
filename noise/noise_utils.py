@@ -76,8 +76,12 @@ def compute_noise_from_distributed_dipole_sources(
             for im, m in enumerate(vm):
                 pt  = steady_thrust_noise_rotating_dipole_fd(Ft,  m, Omega, B, Rmic, phio, theta, zeta, Ma, co)
                 pd  = steady_drag_noise_rotating_dipole_fd(Fd,   m, Omega, B, Rmic, phio, theta, zeta, Ma, co)
-                pti = dirac_delta_thrust_noise_rotating_dipole_fd(Fti, m, Omega, B, Rmic, phio, theta, zeta, phii, Ma, co, pmaxint)
-                pdi = dirac_delta_drag_noise_rotating_dipole_fd(Fdi,   m, Omega, B, Rmic, phio, theta, zeta, phii, Ma, co, pmaxint)
+                pti = 0
+                pdi = 0
+                for phi in phii: # TODO check
+                    for i in range(B):
+                        pti += dirac_delta_thrust_noise_rotating_dipole_fd(Fti, m, Omega, B, Rmic, phio, theta, zeta, phi, Ma, co, pmaxint)
+                        pdi += dirac_delta_drag_noise_rotating_dipole_fd(Fdi,   m, Omega, B, Rmic, phio, theta, zeta, phi, Ma, co, pmaxint)
 
                 PthatR[itheta, im, ir]  = pt
                 PdhatR[itheta, im, ir]  = pd
