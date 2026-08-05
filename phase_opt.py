@@ -10,15 +10,15 @@ from noise_analysis import run_noise_for_case
 from read_result import parse_lod
 from vspaero_config import AVG_LAST_N
 
-MAX_SWEEP = .75 # radians
-OUT_PUT_DIR = Path("noise_k_sweep_jul4_75")
-LOD_PATH = Path("baseline/reverse_eng_TM.lod")
+MAX_SWEEP = 1 # radians
+OUT_PUT_DIR = Path("noise_1rad_sweep")
+LOD_PATH = Path("baseline/reverse_eng_TM_full_blade.lod")
 
 
 def phi(r, k):
     return -(r**k)*MAX_SWEEP + MAX_SWEEP
 
-ksearch = np.linspace(1.58, 1.63, 5, endpoint=True)
+ksearch = np.linspace(1.2, 1.8, 10, endpoint=True)
 
 def main():
     Path.mkdir(OUT_PUT_DIR, exist_ok=True)
@@ -76,7 +76,8 @@ def main():
 
     # ── Summary CSV ───────────────────────────────────────────────────────────
     if summary:
-        csv_path = os.path.join(OUT_PUT_DIR, "noise_summary.csv")
+        # csv_path = os.path.join(OUT_PUT_DIR, "noise_summary.csv")
+        csv_path = Path(OUT_PUT_DIR)/"noise_summary.csv"
         fieldnames = [
             "rank",
             "label",
@@ -90,10 +91,33 @@ def main():
             "OSWLti",
             "OSWLdi",
         ]
+        key_field = "label"  # unique identifier per row
+
+        existing_rows = []
+        if csv_path.exists():
+            with csv_path.open("r", newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    for k in fieldnames:
+                        if k in ("rank", key_field):
+                            continue
+                        val = row.get(k, "")
+                        try:
+                            row[k] = float(val) if val != "" else None
+                        except (TypeError, ValueError):
+                            pass
+                    existing_rows.append(row)
+
+        # merge: new summary rows overwrite existing rows with the same label, others are kept
+        merged = {row[key_field]: row for row in existing_rows}
+        for row in summary:
+            merged[row[key_field]] = row
+
         sorted_rows = sorted(
-            summary, key=lambda r: r.get("OSWLA_total") or float("inf"), reverse=True
+            merged.values(), key=lambda r: r.get("OSWLA_total") or float("inf")
         )
-        with open(csv_path, "w", newline="") as f:
+
+        with csv_path.open("w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             for rank, row in enumerate(sorted_rows, start=1):
@@ -111,7 +135,7 @@ def main():
                         },
                     }
                 )
-        print(f"Summary CSV (loudest → quietest) → {csv_path}")
+    print(f"Summary CSV (loudest → quietest) → {csv_path}")
 
     print(f"\nDone. All noise results in '{OUT_PUT_DIR}/'.")
 

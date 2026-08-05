@@ -6,9 +6,6 @@ from math import pi
 #VSP_FILE       = "baseline/reverse_eng_TM.vsp3"
 # OUTPUT_DIR     = "tangential_sweep_Tm"
 OUTPUT_DIR     = "baseline"
-# Design exploration settings
-N_STEPS        = 6          # number of amplitude steps and location steps
-AMPLITUDE_FRAC = 0.3      # max amplitude = AMPLITUDE_FRAC * R
 # N_CURVE_PTS    = 11         # control points for the half-sine PCurve No longer used
 
 # Propeller geometry
@@ -17,8 +14,8 @@ R              = DIAMETER / 2.0
 R_TIP_FRAC     = 1.0        # r/R at blade tip
 
 # VSPAERO operational settings
-RPM            = 5315
-VINF           = 0.0    # m/s
+RPM            = 5300
+VINF           = 2.0    # m/s
 
 # Atmos
 RHO            = 1.225      # kg/m³

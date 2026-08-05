@@ -106,9 +106,9 @@ def main(baseline_file, output_dir, max_sweeps:list[float], exponants:list[float
 
 if __name__ == "__main__":
     # k = np.linspace(1.5, 2.7, 1, endpoint=True)
-    k = [1.58]
-    Max_sweeps = [.75]
+    k = [1.47]
+    Max_sweeps = [1]
     script_dir = Path(__file__).parent
-    output_dir = script_dir / "75radvsp3files"
+    output_dir = script_dir / "swept_blades"
     base_file = str(Path(__file__).parent / "baseline" / "reverse_eng_TM_full_blade.vsp3")
     main(base_file,output_dir,Max_sweeps, k)

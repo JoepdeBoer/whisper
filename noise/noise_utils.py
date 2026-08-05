@@ -78,7 +78,7 @@ def compute_noise_from_distributed_dipole_sources(
                 pd  = steady_drag_noise_rotating_dipole_fd(Fd,   m, Omega, B, Rmic, phio, theta, zeta, Ma, co)
                 pti = 0
                 pdi = 0
-                for phi in phii: # TODO check
+                for phi in phii: # TODO check with literature/derrivation
                     for i in range(B):
                         pti += dirac_delta_thrust_noise_rotating_dipole_fd(Fti, m, Omega, B, Rmic, phio, theta, zeta, phi, Ma, co, pmaxint)
                         pdi += dirac_delta_drag_noise_rotating_dipole_fd(Fdi,   m, Omega, B, Rmic, phio, theta, zeta, phi, Ma, co, pmaxint)

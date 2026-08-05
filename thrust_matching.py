@@ -175,15 +175,6 @@ def _update_twist_bezier(
     r_dense = np.concatenate(r_dense_list)
     y_dense = np.concatenate(y_dense_list)
 
-
-    # Sort by r (should already be monotone, but guards against floating-point
-    # order issues at segment boundaries where adjacent segments share a knot)
-    #TODO remove?
-    # order = np.argsort(r_dense)
-    # r_dense = r_dense[order]
-    # y_dense = y_dense[order]
-
-
     # ------------------------------------------------------------------ #
     # 3.  Compute thrust scale factor   #
     # ------------------------------------------------------------------ #
@@ -535,11 +526,11 @@ def match_radial_thrust_twist(
 
 if __name__ == "__main__":
     from vspaero_config import*
-    baseline_path = "baseline/reverse_eng_TM.lod"
+    baseline_path = "baseline/reverse_eng_TM_full_blade.lod"
     # matching_prop = "tangential_sweep_Tm/A00P04/A00P04.vsp3"
     #matching_prop = "/home/joep/Downloads/test123_twist09_manual_tweak.vsp3"
-    matching_prop = "match_iter/test123_twist03.vsp3"
-    case_dir = "matching_test_jun_42150"
+    matching_prop = "swept_blades/max_sweep57.3k1.47/max_sweep57.3k1.47.vsp3"
+    case_dir = "swept_blades/max_sweep57.3k1.47"
 
     vsp.ClearVSPModel()
     vsp.ReadVSPFile(matching_prop)
@@ -562,7 +553,7 @@ if __name__ == "__main__":
         Reref=RE_CREF,
         nwakenodes=NUM_WAKE_NODES,
         ncpu=NCPU,
-        wakeiter= 20,#WAKE_NUM_ITER,
+        wakeiter= 30,
         revs= NUM_REVS,
     )
 
@@ -570,11 +561,11 @@ if __name__ == "__main__":
         baseline_lod_path=baseline_path,
         vsp_source_file=matching_prop,
         case_dir=case_dir,
-        case_id="test123",
+        case_id="matching_thrust",
         initial_twist_pts=initial_twist_pts,
         rpm=RPM,
         avg_last_n=AVG_LAST_N,
         gain = .5,
-        max_iter = 10 ,
+        max_iter = 20 ,
         **vsp_aero_kwargs,
     )
