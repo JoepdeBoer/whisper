@@ -114,6 +114,7 @@ def _radial_ospl(PR):
 
 def _relative_phase_deg(P_complex_1d):
     """Phase at each radial station wrapped to [0, 180]."""
+    # TODO
     raw = (np.angle(P_complex_1d) * 180 / np.pi)% 360
     return [i if i < 180 else i - 180 for i in raw]
 
@@ -252,7 +253,7 @@ def run_noise_for_case(B, rR: npt.NDArray, Fx: npt.NDArray, Fy: npt.NDArray, Fz:
         OSPLdR  = _radial_ospl(PdhatR)
         OSPLtiR = _radial_ospl(PtihatR)
         OSPLdiR = _radial_ospl(PdihatR)
-        phitR  = _relative_phase_deg(PthatR[iTheta, 0, :])
+        phitR  = _relative_phase_deg(PthatR[iTheta, 0, :]) # TODO remove phase angle wrapping to be able to compare phases of sources
         phidR  = _relative_phase_deg(PdhatR[iTheta, 0, :])
         phitiR = _relative_phase_deg(PtihatR[iTheta, 0, :])
         phidiR = _relative_phase_deg(PdihatR[iTheta, 0, :])
@@ -355,7 +356,7 @@ def main():
     os.makedirs(NOISE_DIR, exist_ok=True)
    
     summary = []
-    # OUTPUT_DIR = Path(__file__).parent/ "baseline"
+    OUTPUT_DIR = Path(__file__).parent/ "baseline"
     for lod_path in _find_lod_files(OUTPUT_DIR):
         res = parse_lod(lod_path, avg_last_n=AVG_LAST_N)
         rR     = np.array(res["r_norm"])
